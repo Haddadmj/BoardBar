@@ -53,6 +53,18 @@ public final class BoardSet {
         })
     }
 
+    /// The widest board that has actually loaded.
+    ///
+    /// Popover width is held at this across every tab: deriving it per tab
+    /// would resize the popover on each tab click, which reads as a glitch
+    /// rather than as a fit. Boards that have never loaded contribute nothing,
+    /// because guessing a width for one means guessing its column count. The
+    /// width can therefore grow the first time a new tab loads — once per
+    /// board, not once per switch.
+    public var widestLoadedColumnCount: Int {
+        boards.compactMap { $0.board?.columns.count }.max() ?? 0
+    }
+
     /// Whether a tab bar is worth drawing. One board is v1, and v1's popover
     /// had no tab bar.
     public var showsTabBar: Bool { boards.count > 1 }

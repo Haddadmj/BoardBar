@@ -237,3 +237,21 @@ struct BoardSetTests {
         #expect(set.labels == ["Main Board", "Main Board"])
     }
 }
+
+@MainActor
+@Suite("Popover width")
+struct BoardSetWidthTests {
+    let now = Date(timeIntervalSince1970: 1_800_000_000)
+
+    /// The width follows the widest board that has loaded, so switching tabs
+    /// cannot resize the popover.
+    @Test("an unloaded board contributes no width")
+    func unloadedContributesNothing() async throws {
+        let fixture = Fixture(defaults: scratchDefaults())
+        let set = fixture.makeSet([ref(1), ref(2)])
+        #expect(set.widestLoadedColumnCount == 0, "nothing loaded, nothing to size to")
+
+        await set.boards[0].refresh(reason: .launch, now: now)
+        #expect(set.widestLoadedColumnCount == 1, "the one board that has loaded")
+    }
+}

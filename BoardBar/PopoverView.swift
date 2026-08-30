@@ -11,6 +11,13 @@ struct PopoverView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
+            // Nothing is drawn here for a single board, so v1's popover is
+            // exactly this popover with one tab.
+            if model.boardSet.showsTabBar {
+                TabBarView(model: model)
+                Divider()
+            }
+
             switch status.level {
             case .unauthorized:
                 // Replaces the board rather than annotating it. A rejected
@@ -60,9 +67,14 @@ struct PopoverView: View {
         .task { model.popoverOpened() }
     }
 
+    /// Held at the widest board that has loaded rather than derived from the
+    /// selected one, so clicking between tabs cannot resize the popover — the
+    /// same class of glitch as the clipped "Rejected" column before it was
+    /// fixed. With one board this is v1's width exactly.
     private var popoverWidth: CGFloat {
-        guard let board = coordinator?.board else { return 420 }
-        return BoardView.preferredWidth(columns: board.columns.count)
+        let columns = model.boardSet.widestLoadedColumnCount
+        guard columns > 0 else { return 420 }
+        return BoardView.preferredWidth(columns: columns)
     }
 
     private func message(
