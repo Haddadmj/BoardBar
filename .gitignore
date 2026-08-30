@@ -1,0 +1,14 @@
+.scratch/
+.DS_Store
+build/
+*.xcuserstate
+xcuserdata/
+
+# XcodeGen output — regenerate with `xcodegen`
+*.xcodeproj/
+BoardBar/Info.plist
+BoardBar/BoardBar.entitlements
+
+# SwiftPM build output
+.build/
+.swiftpm/

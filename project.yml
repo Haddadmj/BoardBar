@@ -1,0 +1,60 @@
+# The .xcodeproj, Info.plist and .entitlements are all GENERATED from this file.
+# Do not hand-edit them — XcodeGen overwrites them on every run. This file is
+# the single source of truth; run `xcodegen` after changing it.
+name: BoardBar
+options:
+  bundleIdPrefix: com.haddadmj
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    DEVELOPMENT_TEAM: 7DA454D7FF
+    CODE_SIGN_STYLE: Automatic
+    SWIFT_VERSION: "6.0"
+    MARKETING_VERSION: 0.1.0
+    CURRENT_PROJECT_VERSION: 1
+
+packages:
+  BoardBarCore:
+    path: BoardBarCore
+
+targets:
+  BoardBar:
+    type: application
+    platform: macOS
+    sources:
+      - path: BoardBar
+        excludes:
+          - "Info.plist"
+          - "BoardBar.entitlements"
+    info:
+      path: BoardBar/Info.plist
+      properties:
+        # Menu-bar only: no Dock icon, no app-switcher entry, no main window.
+        LSUIElement: true
+        CFBundleName: BoardBar
+        CFBundleDisplayName: BoardBar
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+    entitlements:
+      path: BoardBar/BoardBar.entitlements
+      properties:
+        # macOS widget extensions must be sandboxed, so an App Group is the only
+        # way the app and the widget (ticket 10) can share the board. Enabled
+        # now even though nothing reads it until ticket 05: it is the one part
+        # of the build that depends on portal state rather than local code.
+        com.apple.security.app-sandbox: true
+        com.apple.security.application-groups:
+          - group.com.haddadmj.boardbar
+        # Outbound only, to api.github.com. The app never serves anything.
+        com.apple.security.network.client: true
+    dependencies:
+      - package: BoardBarCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.haddadmj.boardbar
+        PRODUCT_NAME: BoardBar
+        ENABLE_HARDENED_RUNTIME: YES
+        SWIFT_STRICT_CONCURRENCY: complete
