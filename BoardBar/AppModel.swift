@@ -3,7 +3,7 @@ import Foundation
 import Observation
 import os
 
-/// Owns the coordinator and the one timer that drives it.
+/// Owns the configured boards and the one timer that drives them.
 ///
 /// The timer ticks at a fixed low frequency and `PollPolicy` decides whether
 /// each tick does anything. A self-rescheduling timer would have to be torn
@@ -13,8 +13,12 @@ import os
 @MainActor
 @Observable
 final class AppModel {
-    let coordinator: BoardCoordinator
+    let boardSet: BoardSet
     private var timer: Timer?
+
+    /// The board on screen. Optional because "no board configured" is a real
+    /// state on a first run, not a failure to be defaulted around.
+    var coordinator: BoardCoordinator? { boardSet.selected }
 
     /// A menu-bar app polls with no window to report into. Without a trace
     /// there is no way to answer "is it still polling?" after the fact — not
@@ -35,25 +39,32 @@ final class AppModel {
     /// The single place that decides what is being shown and how the icon
     /// looks. Two surfaces disagreeing about staleness is exactly what deriving
     /// this once prevents.
+    /// Derived from the **selected** board only. Worst-across-all-tabs sounds
+    /// more informative and is not: background tabs poll on a 30-minute cadence
+    /// against a 30-minute staleness threshold, so they sit permanently at the
+    /// boundary and an icon driven by them would dim more or less constantly.
+    /// An icon that is always dim says nothing.
     var status: StatusSummary {
         Freshness.summarize(
-            hasBoard: coordinator.board != nil,
-            lastFetchedAt: coordinator.lastFetchedAt,
-            error: coordinator.lastError,
+            hasBoard: coordinator?.board != nil,
+            lastFetchedAt: coordinator?.lastFetchedAt,
+            error: coordinator?.lastError,
             now: now
         )
     }
 
     private let tokens: any TokenStore
 
+    private let store: any BoardStore
+
     init() {
         let tokens = KeychainTokenStore()
+        let store = SharedContainer.makeBoardStore()
         self.tokens = tokens
-        coordinator = BoardCoordinator(
-            ref: BoardURLParser.storedRefs().first,
-            store: SharedContainer.makeBoardStore(),
-            tokens: tokens
-        )
+        self.store = store
+        boardSet = BoardSet(refs: BoardURLParser.storedRefs()) { ref in
+            BoardCoordinator(ref: ref, store: store, tokens: tokens)
+        }
         startTimer()
     }
 
@@ -63,36 +74,45 @@ final class AppModel {
     var hasToken: Bool { (try? tokens.read()) != nil }
 
     /// True on a first run, where an empty board would explain nothing.
-    var needsConfiguration: Bool { coordinator.ref == nil || !hasToken }
+    var needsConfiguration: Bool { boardSet.boards.isEmpty || !hasToken }
 
-    var boardURLString: String {
-        BoardURLParser.storedURLs().first ?? ""
-    }
+    var boardURLStrings: [String] { BoardURLParser.storedURLs() }
 
-    func save(boardURL: String, token: String?) {
-        BoardURLParser.store(urls: [boardURL])
+    func save(boardURLs: [String], token: String?) {
+        BoardURLParser.store(urls: boardURLs)
         // An empty field means "leave the stored token alone", not "delete it".
         // The field renders empty even when a token exists, so treating empty
-        // as a delete would wipe the token every time the sheet is saved.
+        // as a delete would wipe the token every time settings are saved.
+        let tokenChanged = token.map { !$0.isEmpty } ?? false
         if let token, !token.isEmpty {
             try? tokens.write(token)
         }
-        // Assigning `ref` already triggers a refresh when it changes, so
-        // asking for one again would fire a second fetch that the in-flight
-        // guard merely drops. Only nudge the coordinator when the board itself
-        // did not change and the token is the thing that did.
-        let newRef = BoardURLParser.storedRefs().first
-        let refChanged = newRef != coordinator.ref
-        coordinator.ref = newRef
+
+        // A removed board takes its cache with it. An orphaned file would mean
+        // a board that was removed and later added back coming up showing what
+        // it held before it was removed.
+        let removed = boardSet.setRefs(BoardURLParser.storedRefs())
+        for ref in removed { try? store.clear(ref) }
+
         Task {
-            if !refChanged { await coordinator.tokenChanged() }
+            // A board added just now has never fetched; one that was already
+            // there has, and only needs telling when the credential changed
+            // underneath it.
+            for board in boardSet.boards where board.board == nil {
+                await board.refresh(reason: .configurationChanged)
+            }
+            if tokenChanged {
+                for board in boardSet.boards { await board.tokenChanged() }
+            }
             self.report("settingsSaved")
         }
     }
 
     func clearToken() {
         try? tokens.write(nil)
-        Task { await coordinator.tokenChanged() }
+        Task {
+            for board in boardSet.boards { await board.tokenChanged() }
+        }
     }
 
     private func startTimer() {
@@ -100,15 +120,20 @@ final class AppModel {
             Task { @MainActor in
                 guard let self else { return }
                 self.now = Date()
-                let cadence = Int(self.coordinator.currentInterval() / 60)
-                self.log.debug("tick: cadence \(cadence)m, fetching \(self.coordinator.isFetching)")
-                if await self.coordinator.tick() { self.report("tick") }
+                let cadence = self.coordinator.map { Int($0.currentInterval() / 60) } ?? 0
+                self.log.debug("tick: \(self.boardSet.boards.count) boards, selected cadence \(cadence)m")
+                // Every board is ticked; each one's policy decides whether its
+                // tick does anything. The background cadence is that, and
+                // nothing else.
+                if await self.boardSet.tick() { self.report("tick") }
             }
         }
         // The board should be current when the popover first opens, not a
         // minute later.
         Task {
-            await coordinator.refresh(reason: .launch)
+            for board in boardSet.boards {
+                await board.refresh(reason: .launch)
+            }
             report("launch")
         }
     }
@@ -116,12 +141,27 @@ final class AppModel {
     func popoverOpened() {
         now = Date()
         Task {
-            await coordinator.popoverOpened()
+            await boardSet.popoverOpened()
             report("popoverOpened")
         }
     }
 
+    /// Switching tabs is the same event as opening the popover on that board:
+    /// it promotes it to the active cadence and refreshes it if what is on
+    /// screen has gone off.
+    func select(_ index: Int) {
+        now = Date()
+        Task {
+            await boardSet.select(index)
+            report("tabSelected")
+        }
+    }
+
     private func report(_ reason: String) {
+        guard let coordinator else {
+            log.notice("\(reason, privacy: .public): no board configured")
+            return
+        }
         if let error = coordinator.lastError {
             log.notice("\(reason, privacy: .public): failed — \(error.message, privacy: .public)")
         } else if let board = coordinator.board {

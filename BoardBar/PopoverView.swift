@@ -6,7 +6,7 @@ struct PopoverView: View {
 
     @Environment(\.openWindow) private var openWindow
 
-    private var coordinator: BoardCoordinator { model.coordinator }
+    private var coordinator: BoardCoordinator? { model.coordinator }
     private var status: StatusSummary { model.status }
 
     var body: some View {
@@ -23,7 +23,7 @@ struct PopoverView: View {
                     systemImage: "exclamationmark.triangle",
                     tint: .orange
                 )
-            case .empty where coordinator.ref == nil:
+            case .empty where coordinator == nil:
                 // First run says what is missing and waits. It does not open
                 // settings by itself: two windows appearing from one click
                 // reads as a glitch, and the choice to configure should be the
@@ -42,7 +42,7 @@ struct PopoverView: View {
                     tint: .secondary
                 )
             case .fresh, .stale:
-                if let board = coordinator.board {
+                if let board = coordinator?.board {
                     BoardView(board: board, now: model.now)
                 }
             }
@@ -61,7 +61,7 @@ struct PopoverView: View {
     }
 
     private var popoverWidth: CGFloat {
-        guard let board = coordinator.board else { return 420 }
+        guard let board = coordinator?.board else { return 420 }
         return BoardView.preferredWidth(columns: board.columns.count)
     }
 
@@ -87,7 +87,7 @@ struct PopoverView: View {
 
     private var footer: some View {
         HStack(spacing: 8) {
-            if coordinator.isFetching {
+            if coordinator?.isFetching == true {
                 ProgressView().controlSize(.small)
             }
             // Present in every state, including success. A timestamp that only
@@ -104,8 +104,10 @@ struct PopoverView: View {
             }
             Spacer()
             Button("Settings…") { showSettings() }
-            Button("Refresh") { Task { await coordinator.refresh(reason: .manual) } }
-                .disabled(coordinator.isFetching || coordinator.ref == nil)
+            Button("Refresh") {
+                Task { await coordinator?.refresh(reason: .manual) }
+            }
+            .disabled(coordinator?.isFetching ?? true)
             Button("Quit") { NSApplication.shared.terminate(nil) }
                 .keyboardShortcut("q")
         }

@@ -114,13 +114,13 @@ struct SettingsWindow: View {
             // every appearance would wipe what was half-typed if it ever
             // re-appears without being closed.
             guard !loaded else { return }
-            boardURL = model.boardURLString
+            boardURL = model.boardURLStrings.first ?? ""
             loaded = true
         }
     }
 
     private func save() {
-        model.save(boardURL: boardURL, token: token.isEmpty ? nil : token)
+        model.save(boardURLs: [boardURL], token: token.isEmpty ? nil : token)
         token = ""
     }
 }
