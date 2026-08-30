@@ -39,6 +39,7 @@ final class AppModel {
     /// The single place that decides what is being shown and how the icon
     /// looks. Two surfaces disagreeing about staleness is exactly what deriving
     /// this once prevents.
+    ///
     /// Derived from the **selected** board only. Worst-across-all-tabs sounds
     /// more informative and is not: background tabs poll on a 30-minute cadence
     /// against a 30-minute staleness threshold, so they sit permanently at the
@@ -54,7 +55,6 @@ final class AppModel {
     }
 
     private let tokens: any TokenStore
-
     private let store: any BoardStore
 
     init() {
@@ -83,7 +83,7 @@ final class AppModel {
         // An empty field means "leave the stored token alone", not "delete it".
         // The field renders empty even when a token exists, so treating empty
         // as a delete would wipe the token every time settings are saved.
-        let tokenChanged = token.map { !$0.isEmpty } ?? false
+        let tokenChanged = !(token ?? "").isEmpty
         if let token, !token.isEmpty {
             try? tokens.write(token)
         }
