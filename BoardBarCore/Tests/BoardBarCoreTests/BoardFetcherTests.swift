@@ -27,9 +27,10 @@ final actor StubTransport: GitHubTransport {
 // Captured verbatim from the live board on 2026-08-30.
 private let layoutBody = """
 {"data":{"user":{"projectV2":{
+  "title":"Qurba bug reports",
   "statusField":{"name":"Status","options":[
     {"name":"Todo"},{"name":"In Progress"},{"name":"Done"},{"name":"Rejected"}]},
-  "view":{"layout":"BOARD_LAYOUT","filter":"",
+  "view":{"name":"Main Board","layout":"BOARD_LAYOUT","filter":"",
     "verticalGroupByFields":{"nodes":[{"__typename":"ProjectV2SingleSelectField",
       "name":"Status","options":[
         {"name":"Todo"},{"name":"In Progress"},{"name":"Done"},{"name":"Rejected"}]}]}}
@@ -201,5 +202,57 @@ struct BoardFetcherTests {
         )
         #expect(card.isStale(asOf: updated.addingTimeInterval(6 * 24 * 3600)) == false)
         #expect(card.isStale(asOf: updated.addingTimeInterval(8 * 24 * 3600)))
+    }
+}
+
+@Suite("Board naming")
+struct BoardNamingTests {
+    /// Both come off nodes the layout query already visits, so a tab label
+    /// costs no extra request.
+    @Test("the live target board yields its project title and view name")
+    func namesTheBoard() async throws {
+        let stub = StubTransport([.success(layoutBody), .success(itemsBody)])
+        let board = try await BoardFetcher(transport: stub).fetch(targetRef, token: "t")
+
+        #expect(board.projectTitle == "Qurba bug reports")
+        #expect(board.viewName == "Main Board")
+        #expect(await stub.queries.count == 2, "still two round trips")
+    }
+
+    /// A board that fell back to the Status field is still the tab the
+    /// maintainer configured, and says what it did through `columnSource`.
+    @Test("a fallback board keeps the name of the view it could not mirror")
+    func fallbackKeepsTheName() async throws {
+        let tableView = """
+        {"data":{"user":{"projectV2":{
+          "title":"Qurba bug reports",
+          "statusField":{"name":"Status","options":[{"name":"Todo"}]},
+          "view":{"name":"Everything","layout":"TABLE_LAYOUT","filter":"is:open",
+            "verticalGroupByFields":{"nodes":[]}}}}}}
+        """
+        let stub = StubTransport([.success(tableView), .success(itemsBody)])
+        let board = try await BoardFetcher(transport: stub).fetch(targetRef, token: "t")
+
+        #expect(board.columnSource == .statusFieldFallback)
+        #expect(board.viewName == "Everything")
+        #expect(board.projectTitle == "Qurba bug reports")
+    }
+
+    /// Nothing about a name is worth failing a fetch for.
+    @Test("a response without either name still produces a board")
+    func namesAreOptional() async throws {
+        let unnamed = """
+        {"data":{"user":{"projectV2":{
+          "statusField":{"name":"Status","options":[{"name":"Todo"}]},
+          "view":{"layout":"BOARD_LAYOUT","filter":"",
+            "verticalGroupByFields":{"nodes":[{"__typename":"ProjectV2SingleSelectField",
+              "name":"Status","options":[{"name":"Todo"}]}]}}}}}}
+        """
+        let stub = StubTransport([.success(unnamed), .success(itemsBody)])
+        let board = try await BoardFetcher(transport: stub).fetch(targetRef, token: "t")
+
+        #expect(board.projectTitle == nil)
+        #expect(board.viewName == nil)
+        #expect(board.shownCount == 1)
     }
 }

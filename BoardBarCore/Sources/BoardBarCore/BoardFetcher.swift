@@ -28,6 +28,8 @@ public struct BoardFetcher: Sendable {
         /// because the fallback path has no way to apply it. Non-nil means the
         /// board shown is wider than the same view in a browser.
         let unappliedFilter: String?
+        let projectTitle: String?
+        let viewName: String?
     }
 
     private func rootField(_ ref: BoardRef) -> String {
@@ -44,6 +46,7 @@ public struct BoardFetcher: Sendable {
         let viewFragment = ref.viewNumber.map { number in
             """
             view(number: \(number)) {
+              name
               layout
               filter
               verticalGroupByFields(first: 1) {
@@ -60,6 +63,7 @@ public struct BoardFetcher: Sendable {
         query($owner: String!) {
           \(rootField(ref))(login: $owner) {
             projectV2(number: \(ref.projectNumber)) {
+              title
               statusField: field(name: "Status") {
                 ... on ProjectV2SingleSelectField { name options { name } }
               }
@@ -79,6 +83,10 @@ public struct BoardFetcher: Sendable {
         else { throw .boardNotFound }
 
         var droppedFilter: String?
+        // Read off the same nodes the layout query already visits, so a tab
+        // label costs no extra request.
+        let projectTitle = project["title"] as? String
+        var viewName: String?
 
         // Path 1: mirror the named view.
         if let viewNumber = ref.viewNumber {
@@ -86,6 +94,7 @@ public struct BoardFetcher: Sendable {
                 throw .viewNotFound(number: viewNumber)
             }
             let filter = view["filter"] as? String ?? ""
+            viewName = view["name"] as? String
             let isBoard = (view["layout"] as? String) == "BOARD_LAYOUT"
             let groupBy = ((view["verticalGroupByFields"] as? [String: Any])?["nodes"]
                 as? [[String: Any]])?.first
@@ -104,7 +113,9 @@ public struct BoardFetcher: Sendable {
                         columnNames: options.compactMap { $0["name"] as? String },
                         filter: filter,
                         source: .view,
-                        unappliedFilter: nil
+                        unappliedFilter: nil,
+                        projectTitle: projectTitle,
+                        viewName: viewName
                     )
                 }
             }
@@ -126,7 +137,12 @@ public struct BoardFetcher: Sendable {
             columnNames: options.compactMap { $0["name"] as? String },
             filter: "",
             source: .statusFieldFallback,
-            unappliedFilter: droppedFilter
+            unappliedFilter: droppedFilter,
+            projectTitle: projectTitle,
+            // Kept even here. The columns came from the Status field rather
+            // than the view, but the tab is still the view the maintainer
+            // configured, and the board says so itself through `columnSource`.
+            viewName: viewName
         )
     }
 
@@ -202,7 +218,9 @@ public struct BoardFetcher: Sendable {
             columnSource: layout.source,
             fetchedAt: now,
             totalCount: items["totalCount"] as? Int ?? 0,
-            unappliedFilter: layout.unappliedFilter
+            unappliedFilter: layout.unappliedFilter,
+            projectTitle: layout.projectTitle,
+            viewName: layout.viewName
         )
     }
 

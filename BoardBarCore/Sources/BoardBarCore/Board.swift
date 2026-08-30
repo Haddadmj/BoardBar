@@ -71,19 +71,30 @@ public struct Board: Codable, Hashable, Sendable {
     /// A view filter that was fetched but could not be applied. Non-nil means
     /// the board on screen is wider than the board in the browser.
     public let unappliedFilter: String?
+    /// The project's own title — "Qurba bug reports".
+    ///
+    /// Optional, and not because GitHub might omit it: a board cached by v1
+    /// carries neither of these, and a cache that cannot be decoded is thrown
+    /// away whole. A tab label is not worth losing the board for.
+    public let projectTitle: String?
+    /// The mirrored view's name — "Main Board". Nil when the URL named no view.
+    public let viewName: String?
 
     public var shownCount: Int { columns.reduce(0) { $0 + $1.count } }
     public var isTruncated: Bool { totalCount > shownCount }
 
     public init(
         columns: [Column], columnSource: ColumnSource, fetchedAt: Date,
-        totalCount: Int, unappliedFilter: String? = nil
+        totalCount: Int, unappliedFilter: String? = nil,
+        projectTitle: String? = nil, viewName: String? = nil
     ) {
         self.columns = columns
         self.columnSource = columnSource
         self.fetchedAt = fetchedAt.wholeSeconds
         self.totalCount = totalCount
         self.unappliedFilter = unappliedFilter
+        self.projectTitle = projectTitle
+        self.viewName = viewName
     }
 }
 

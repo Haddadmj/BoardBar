@@ -153,6 +153,24 @@ struct BoardStoreTests {
         #expect(!contents.lowercased().contains("token"))
         #expect(!contents.lowercased().contains("authorization"))
     }
+
+    /// A v1 cache was written before boards carried names. Decoding is
+    /// all-or-nothing, so a missing title must not throw away a board that is
+    /// otherwise perfectly good — the tab falls back to a number instead.
+    @Test("a board cached by v1 decodes without its new fields")
+    func v1CacheStillDecodes() throws {
+        let v1JSON = """
+        {"columns":[{"name":"Todo","cards":[]}],"columnSource":"view",
+         "fetchedAt":"2026-08-30T19:23:45Z","totalCount":0}
+        """
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let board = try decoder.decode(Board.self, from: Data(v1JSON.utf8))
+
+        #expect(board.columns.count == 1)
+        #expect(board.projectTitle == nil)
+        #expect(board.viewName == nil)
+    }
 }
 
 /// Bridges the synchronous test to the async fetcher without making the whole
