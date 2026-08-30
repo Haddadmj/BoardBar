@@ -50,7 +50,7 @@ final class AppModel {
         let tokens = KeychainTokenStore()
         self.tokens = tokens
         coordinator = BoardCoordinator(
-            ref: BoardURLParser.storedRef(),
+            ref: BoardURLParser.storedRefs().first,
             store: SharedContainer.makeBoardStore(),
             tokens: tokens
         )
@@ -66,11 +66,11 @@ final class AppModel {
     var needsConfiguration: Bool { coordinator.ref == nil || !hasToken }
 
     var boardURLString: String {
-        UserDefaults.standard.string(forKey: BoardURLParser.defaultsKey) ?? ""
+        BoardURLParser.storedURLs().first ?? ""
     }
 
     func save(boardURL: String, token: String?) {
-        BoardURLParser.store(boardURL)
+        BoardURLParser.store(urls: [boardURL])
         // An empty field means "leave the stored token alone", not "delete it".
         // The field renders empty even when a token exists, so treating empty
         // as a delete would wipe the token every time the sheet is saved.
@@ -81,7 +81,7 @@ final class AppModel {
         // asking for one again would fire a second fetch that the in-flight
         // guard merely drops. Only nudge the coordinator when the board itself
         // did not change and the token is the thing that did.
-        let newRef = BoardURLParser.storedRef()
+        let newRef = BoardURLParser.storedRefs().first
         let refChanged = newRef != coordinator.ref
         coordinator.ref = newRef
         Task {
