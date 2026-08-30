@@ -5,7 +5,15 @@ struct BoardView: View {
     let board: Board
     var now: Date = Date()
 
-    private let columnWidth: CGFloat = 190
+    static let columnWidth: CGFloat = 190
+    static let columnSpacing: CGFloat = 10
+
+    /// Width needed to show every column without scrolling, capped so a board
+    /// with nine columns does not open a popover wider than the screen.
+    static func preferredWidth(columns: Int) -> CGFloat {
+        let content = CGFloat(columns) * columnWidth + CGFloat(max(0, columns - 1)) * columnSpacing
+        return min(content + 28, 900)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -23,9 +31,9 @@ struct BoardView: View {
             }
 
             ScrollView(.horizontal) {
-                HStack(alignment: .top, spacing: 10) {
+                HStack(alignment: .top, spacing: Self.columnSpacing) {
                     ForEach(board.columns) { column in
-                        ColumnView(column: column, now: now, width: columnWidth)
+                        ColumnView(column: column, now: now, width: Self.columnWidth)
                     }
                 }
                 .padding(.horizontal, 2)

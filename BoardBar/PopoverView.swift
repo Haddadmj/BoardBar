@@ -51,14 +51,18 @@ struct PopoverView: View {
             footer
         }
         .padding(12)
-        .frame(width: needsSetup ? 420 : 640)
+        // Sized from the board rather than a guessed constant: a hardcoded
+        // width silently clipped the last column, which reads as a rendering
+        // bug rather than as content that needs scrolling.
+        .frame(width: popoverWidth)
         .frame(maxHeight: 520)
         .environment(\.layoutDirection, .leftToRight)
         .task { model.popoverOpened() }
     }
 
-    private var needsSetup: Bool {
-        coordinator.board == nil
+    private var popoverWidth: CGFloat {
+        guard let board = coordinator.board else { return 420 }
+        return BoardView.preferredWidth(columns: board.columns.count)
     }
 
     private func message(

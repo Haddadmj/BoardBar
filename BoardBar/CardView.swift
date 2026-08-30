@@ -24,12 +24,18 @@ struct CardView: View {
     let card: Card
     let now: Date
 
-    /// Resolved per card from the title, not set once for the app.
+    /// The base direction of the **title text**, and nothing else.
     ///
-    /// Qurba forces right-to-left globally because it is Arabic-only. BoardBar
-    /// is not: its column names, timestamps and settings labels are Latin and
-    /// only the issue titles are Arabic, so a global force would put all of its
-    /// own chrome against the wrong edge.
+    /// Not applied to the card. Setting `layoutDirection` on the container
+    /// mirrors the view hierarchy — it reverses the HStack and the label strip,
+    /// putting "#20" on the right and rendering the labels backwards from the
+    /// order GitHub returns them. That is view mirroring, which is the half
+    /// Qurba explicitly disables in `src/theme/rtl.ts`; its `writingDirection`
+    /// rule is about the base direction of a text run.
+    ///
+    /// The issue number, the staleness dot and the label chips are app chrome,
+    /// not part of the Arabic sentence, so they follow the app's direction. The
+    /// title is the only thing here that is actually Arabic.
     private var direction: BaseDirection { TextDirection.resolve(card.title) }
 
     var body: some View {
@@ -44,10 +50,20 @@ struct CardView: View {
                 Text("#\(card.number)")
                     .font(.caption.monospaced())
                     .foregroundStyle(.secondary)
-                Text(card.title)
-                    .font(.callout)
-                    .lineLimit(3)
+                Spacer(minLength: 0)
             }
+
+            Text(card.title)
+                .font(.callout)
+                .lineLimit(3)
+                // Without this a Text inside a stack truncates instead of
+                // wrapping, however high its line limit is.
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: alignment)
+                // The base direction of this run only. An Arabic paragraph
+                // settles against its own edge, which is what makes a wrapped
+                // title and any trailing neutrals order correctly.
+                .environment(\.layoutDirection, direction.layoutDirection)
 
             if !card.labels.isEmpty {
                 LabelStrip(labels: card.labels)
@@ -59,12 +75,10 @@ struct CardView: View {
         .contentShape(.rect)
         .onTapGesture { open() }
         .help(card.title)
-        // The whole rule, in one line: set the base direction and let alignment
-        // stay natural. No `.multilineTextAlignment` anywhere in this file, and
-        // no `NSTextAlignment.left`/`.right` — those are the absolute values
-        // that cannot survive a direction change. `HStack` reverses under this,
-        // which is what puts `#20` on the correct side of an Arabic title.
-        .environment(\.layoutDirection, direction.layoutDirection)
+    }
+
+    private var alignment: Alignment {
+        direction == .rightToLeft ? .trailing : .leading
     }
 
     /// Opens the issue on github.com and gets out of the way. The card body is
@@ -96,6 +110,9 @@ private struct LabelStrip: View {
                         (Color(githubHex: label.color) ?? .secondary).opacity(0.25),
                         in: .capsule
                     )
+                    // Chips sit in the app's direction so they stay in the
+                    // order GitHub returns them; only the chip's own text
+                    // resolves its base direction.
                     .environment(\.layoutDirection, TextDirection.resolve(label.name).layoutDirection)
             }
         }
