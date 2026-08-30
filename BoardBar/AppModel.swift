@@ -108,6 +108,19 @@ final class AppModel {
         }
     }
 
+    /// Fetches every configured board now, whatever its cadence says. The
+    /// only place that ignores the policy, and it is doing so because someone
+    /// asked in as many words.
+    func refreshAll() {
+        now = Date()
+        Task {
+            for board in boardSet.boards {
+                await board.refresh(reason: .manual)
+            }
+            report("refreshAll")
+        }
+    }
+
     func clearToken() {
         try? tokens.write(nil)
         Task {
