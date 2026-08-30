@@ -1,10 +1,15 @@
 # BoardBar
 
-A menu-bar macOS app that mirrors one GitHub Projects v2 board view as a Kanban
-board in a popover. Paste a board URL, paste a token, glance at the board, click
-a card to open it on github.com.
+A menu-bar macOS app that mirrors GitHub Projects v2 board views as Kanban
+boards in a popover. Paste a board URL, paste a token, glance at the board,
+click a card to open it on github.com.
 
-Personal tool, built for one board. Read-only by design: it never mutates
+Several boards can be configured, and a tab switches between them. A tab is one
+saved *view*, not one project, so "Main Board" and "My Items" of the same
+project are two tabs at no extra cost. With fewer than two configured there is
+no tab bar at all.
+
+Personal tool. Read-only by design: it never mutates
 project state — no dragging between columns, no assigning, no commenting. A
 mirror can beat github.com on latency and ambient presence; a half-featured
 editor cannot beat it on features.
@@ -46,7 +51,14 @@ that file without ever opening a socket. Board traffic stays at one poll no
 matter how many surfaces show it.
 
 Cadence backs off: every 5 minutes while the popover has been opened in the last
-hour, every 30 otherwise.
+hour, every 30 otherwise. That is also the whole of the per-tab cadence — only
+the selected tab is told the popover was opened, so a background tab is already
+a board nobody has looked at recently, which is what the policy calls idle.
+
+The menu-bar icon reflects the selected tab only. Worst-across-all-tabs sounds
+more informative and is not: a background tab polls on a 30-minute cadence
+against a 30-minute staleness threshold, so it sits permanently at the boundary
+and the icon would dim more or less constantly.
 
 ## Right-to-left
 
@@ -61,5 +73,9 @@ character.
 
 ## Configuration
 
-- Board URL — `UserDefaults`. It names a board, not a credential.
-- Token — Keychain, reached only through the `TokenStore` protocol.
+- Board URLs — `UserDefaults`, under `boardURLs`, in tab order. They name
+  boards, not credentials. v1's single `boardURL` is read once to seed the list
+  and then left alone, so rolling back to a v1 build loses nothing.
+- Token — Keychain, reached only through the `TokenStore` protocol. One token
+  for every board: boards on one account share a credential, and a per-board
+  token is a second thing to get wrong for no gain.
