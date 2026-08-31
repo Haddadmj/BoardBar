@@ -60,6 +60,7 @@ struct SettingsWindow: View {
         }
         .padding(20)
         .frame(width: 460)
+        .background(FloatingWindow())
         // Both fields hold pure ASCII — a URL and a token. This is Qurba's
         // TextInput carve-out: a field resolves its own natural alignment, and
         // forcing a direction onto one holding Latin characters lays them out
@@ -249,4 +250,33 @@ struct SettingsWindow: View {
     private func commit() {
         model.save(boardURLs: urls, token: nil)
     }
+}
+
+/// Keeps the settings window above other apps until it is closed.
+///
+/// An `LSUIElement` app has no Dock icon and no app-switcher entry, so when it
+/// deactivates its windows drop behind whatever was clicked into with no way
+/// back to them — the menu-bar icon is the only route, which reads as the
+/// window having closed itself.
+///
+/// Floating is the right answer here rather than a general one, because of what
+/// this particular window is for: both fields are filled by going to github.com
+/// and copying something. A settings window that hides the moment you go to
+/// fetch what it asked for is a window that cannot be used for its only job.
+private struct FloatingWindow: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        // The view has no window until it is in the hierarchy, which is one
+        // run-loop turn after this.
+        DispatchQueue.main.async {
+            guard let window = view.window else { return }
+            window.level = .floating
+            // Follows to whichever Space is in front, rather than yanking that
+            // Space back to wherever the window was opened.
+            window.collectionBehavior.insert(.moveToActiveSpace)
+        }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {}
 }
