@@ -33,6 +33,16 @@ Signing needs an Apple Developer Program membership: the App Group entitlement
 that the app and its future widget share is not available to free personal
 teams.
 
+## App icon
+
+`BoardBar/Assets.xcassets/AppIcon.appiconset` is generated, not drawn by hand.
+The PNGs are committed because they are build inputs, and
+`Tools/make-appicon.swift` is where they came from:
+
+```sh
+swift Tools/make-appicon.swift
+```
+
 ## Tests
 
 ```sh

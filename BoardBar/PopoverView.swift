@@ -108,6 +108,7 @@ struct PopoverView: View {
             Text(status.footer)
                 .font(.caption)
                 .foregroundStyle(status.level == .stale ? .orange : .secondary)
+                .lineLimit(1)
             if let warning = status.warning {
                 Text("· \(warning)")
                     .font(.caption)
@@ -115,13 +116,27 @@ struct PopoverView: View {
                     .lineLimit(1)
             }
             Spacer()
-            Button("Settings…") { showSettings() }
-            Button("Refresh") {
+            // Icon beside the word rather than instead of it. These three are
+            // the whole of the app's menu, and an icon-only row would make
+            // Quit a guess — but the icons are what the eye lands on when the
+            // popover is opened to do one specific thing.
+            Button {
+                showSettings()
+            } label: {
+                SwiftUI.Label("Settings…", systemImage: "gearshape")
+            }
+            Button {
                 Task { await coordinator?.refresh(reason: .manual) }
+            } label: {
+                SwiftUI.Label("Refresh", systemImage: "arrow.clockwise")
             }
             .disabled(coordinator?.isFetching ?? true)
-            Button("Quit") { NSApplication.shared.terminate(nil) }
-                .keyboardShortcut("q")
+            Button {
+                NSApplication.shared.terminate(nil)
+            } label: {
+                SwiftUI.Label("Quit", systemImage: "power")
+            }
+            .keyboardShortcut("q")
         }
     }
 

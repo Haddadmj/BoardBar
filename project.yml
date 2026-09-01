@@ -36,6 +36,10 @@ targets:
         LSUIElement: true
         CFBundleName: BoardBar
         CFBundleDisplayName: BoardBar
+        # LSUIElement keeps the icon out of the Dock, not out of everything:
+        # Finder, Login Items and notification alerts all still ask for it, and
+        # without this key they fall back to the generic application icon.
+        CFBundleIconName: AppIcon
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
     entitlements:
@@ -58,3 +62,4 @@ targets:
         PRODUCT_NAME: BoardBar
         ENABLE_HARDENED_RUNTIME: YES
         SWIFT_STRICT_CONCURRENCY: complete
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
