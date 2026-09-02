@@ -50,6 +50,15 @@ beat it on features.
 Left-click the menu-bar icon for the board; click any card to open it on
 github.com.
 
+## Install
+
+Download the latest `BoardBar.dmg` from the
+[releases page](https://github.com/Haddadmj/BoardBar/releases), open it, and drag
+**BoardBar** into **Applications**. Releases are signed with a Developer ID and
+notarized by Apple, so they open with a normal double-click.
+
+Then follow [Setup](#setup) to add a token and a board.
+
 ## Build
 
 The `.xcodeproj` is **generated** and not tracked, so a fresh clone needs
