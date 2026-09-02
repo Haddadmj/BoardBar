@@ -69,6 +69,24 @@ Signing needs an Apple Developer Program membership: the App Group entitlement
 that the app and its future widget share is not available to free personal
 teams.
 
+## Release
+
+```sh
+export DEVELOPER_ID="Developer ID Application: Your Name (TEAMID)"
+export AC_KEYCHAIN_PROFILE="notary"   # see release.sh header for one-time setup
+./scripts/release.sh                  # → .build/dist/BoardBar.dmg
+```
+
+`release.sh` regenerates the project, archives, exports a Developer ID build,
+packages a DMG, then notarizes and staples it.
+
+Unlike a plain menu-bar binary there is no unsigned fallback, and that is the
+App Group's doing: a sandboxed app carrying one needs a real provisioning
+profile, so an ad-hoc signature produces a bundle that runs on the machine that
+built it and nowhere else. The script asks for `DEVELOPER_ID` up front rather
+than producing that bundle and letting you discover the problem on someone
+else's Mac.
+
 ## App icon
 
 `BoardBar/Assets.xcassets/AppIcon.appiconset` is generated, not drawn by hand.

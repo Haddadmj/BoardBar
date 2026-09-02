@@ -36,6 +36,9 @@ targets:
         LSUIElement: true
         CFBundleName: BoardBar
         CFBundleDisplayName: BoardBar
+        # Otherwise every archive warns, and the Finder "Kind" column and the
+        # notarized build's App Store-style metadata both fall back to generic.
+        LSApplicationCategoryType: public.app-category.developer-tools
         # LSUIElement keeps the icon out of the Dock, not out of everything:
         # Finder, Login Items and notification alerts all still ask for it, and
         # without this key they fall back to the generic application icon.
