@@ -1,18 +1,54 @@
-# BoardBar
+<h1 align="center">BoardBar</h1>
 
-A menu-bar macOS app that mirrors GitHub Projects v2 board views as Kanban
-boards in a popover. Paste a board URL, paste a token, glance at the board,
-click a card to open it on github.com.
+<p align="center">
+  <em>Your GitHub Projects board, one click away in the menu bar.</em>
+</p>
+
+<p align="center">
+  <img alt="Platform" src="https://img.shields.io/badge/macOS-14%2B-black?logo=apple">
+  <img alt="Swift" src="https://img.shields.io/badge/Swift-6-orange?logo=swift">
+  <img alt="License" src="https://img.shields.io/badge/license-MIT-blue">
+</p>
+
+BoardBar is a menu-bar macOS app that mirrors GitHub Projects v2 board views as
+Kanban boards in a popover. Paste a board URL, paste a token, glance at the
+board, click a card to open it on github.com.
 
 Several boards can be configured, and a tab switches between them. A tab is one
 saved *view*, not one project, so "Main Board" and "My Items" of the same
 project are two tabs at no extra cost. With fewer than two configured there is
 no tab bar at all.
 
-Personal tool. Read-only by design: it never mutates
-project state — no dragging between columns, no assigning, no commenting. A
-mirror can beat github.com on latency and ambient presence; a half-featured
-editor cannot beat it on features.
+Built as a personal tool, and read-only by design: it never mutates project
+state — no dragging between columns, no assigning, no commenting. A mirror can
+beat github.com on latency and ambient presence; a half-featured editor cannot
+beat it on features.
+
+## Requirements
+
+- macOS 14+
+- A GitHub account with access to the Projects v2 board you want to mirror
+- Xcode 26 / Swift 6 and [XcodeGen](https://github.com/yonaskolb/XcodeGen) to build
+- An Apple Developer Program membership to sign it (see [Build](#build))
+
+## Setup
+
+1. **Create a token.** Either a classic personal access token with the
+   **`read:project`** and **`repo`** scopes, or a fine-grained token with
+   read access to the projects and repositories involved. Generate one at
+   [github.com/settings/tokens](https://github.com/settings/tokens).
+2. **Open Settings** from the popover and paste the token. It goes to the
+   Keychain, never to disk in the clear, and one token serves every board.
+3. **Add a board** by pasting the URL of a project *view* — the address bar
+   while you are looking at the board, e.g.
+   `https://github.com/orgs/acme/projects/7/views/1`, or
+   `https://github.com/users/<you>/projects/3/views/1` for a personal project.
+   A repository issues list is not a project board, and BoardBar will say so.
+4. Add more views to get more tabs. The same project's "Main Board" and
+   "My Items" are two perfectly good tabs.
+
+Left-click the menu-bar icon for the board; click any card to open it on
+github.com.
 
 ## Build
 
@@ -89,3 +125,7 @@ character.
 - Token — Keychain, reached only through the `TokenStore` protocol. One token
   for every board: boards on one account share a credential, and a per-board
   token is a second thing to get wrong for no gain.
+
+## License
+
+[MIT](LICENSE) © Mohammad Al-Haddad

@@ -89,7 +89,7 @@ struct BoardFetcherTests {
 
     @Test("an org board queries the organization root, not user")
     func orgRoot() async throws {
-        let ref = BoardRef(ownerKind: .orgs, owner: "neotek", projectNumber: 7, viewNumber: 1)
+        let ref = BoardRef(ownerKind: .orgs, owner: "acme", projectNumber: 7, viewNumber: 1)
         let stub = StubTransport([.success(layoutBody.replacingOccurrences(of: "\"user\"", with: "\"organization\"")), .success(itemsBody.replacingOccurrences(of: "\"user\"", with: "\"organization\""))])
         _ = try? await BoardFetcher(transport: stub).fetch(ref, token: "t")
         let sent = await stub.queries

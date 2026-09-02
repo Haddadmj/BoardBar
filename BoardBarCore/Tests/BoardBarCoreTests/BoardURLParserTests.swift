@@ -16,9 +16,9 @@ struct BoardURLParserTests {
 
     @Test("an org board parses")
     func orgBoard() throws {
-        let ref = try BoardURLParser.parse("https://github.com/orgs/neotek/projects/7/views/1")
+        let ref = try BoardURLParser.parse("https://github.com/orgs/acme/projects/7/views/1")
         #expect(ref.ownerKind == .orgs)
-        #expect(ref.owner == "neotek")
+        #expect(ref.owner == "acme")
         #expect(ref.viewNumber == 1)
     }
 
