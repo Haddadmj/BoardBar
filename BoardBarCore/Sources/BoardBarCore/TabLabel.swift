@@ -38,7 +38,7 @@ public enum TabLabel {
     /// Two views of one project are two tabs, so the view number is
     /// deliberately not part of this.
     private static func projectKey(_ ref: BoardRef) -> String {
-        "\(ref.ownerKind.rawValue)-\(ref.owner)-\(ref.projectNumber)"
+        "\(ref.ownerKind.rawValue)-\(ref.owner.lowercased())-\(ref.projectNumber)"
     }
 
     /// Names the view too when there is one, because two tabs on the same

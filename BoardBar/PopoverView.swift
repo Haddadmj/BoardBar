@@ -10,7 +10,7 @@ struct PopoverView: View {
     private var status: StatusSummary { model.status }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: Space.m) {
             // Nothing is drawn here for a single board, so v1's popover is
             // exactly this popover with one tab.
             if model.boardSet.showsTabBar {
@@ -30,6 +30,15 @@ struct PopoverView: View {
                     systemImage: "exclamationmark.triangle",
                     tint: .orange
                 )
+            case .missingToken:
+                // A first run, usually, and nothing has gone wrong. Saying the
+                // token was "rejected" here sent people hunting for a fault.
+                message(
+                    title: "No token yet",
+                    detail: "Add a GitHub token to see this board.",
+                    systemImage: "key",
+                    tint: .secondary
+                )
             case .empty where coordinator == nil:
                 // First run says what is missing and waits. It does not open
                 // settings by itself: two windows appearing from one click
@@ -40,6 +49,15 @@ struct PopoverView: View {
                     detail: "Add a project board URL and a GitHub token to see your board here.",
                     systemImage: "rectangle.3.group",
                     tint: .secondary
+                )
+            case .empty where status.warning != nil:
+                // A board that failed before it ever loaded. This said "Loading
+                // board…" for ever, with the real reason cut off in the footer.
+                message(
+                    title: "Couldn't load this board",
+                    detail: status.warning,
+                    systemImage: "exclamationmark.triangle",
+                    tint: .orange
                 )
             case .empty:
                 message(
@@ -57,14 +75,18 @@ struct PopoverView: View {
             Divider()
             footer
         }
-        .padding(12)
+        .padding(Space.m)
         // Sized from the board rather than a guessed constant: a hardcoded
         // width silently clipped the last column, which reads as a rendering
         // bug rather than as content that needs scrolling.
         .frame(width: popoverWidth)
-        .frame(maxHeight: 520)
         .environment(\.layoutDirection, .leftToRight)
+        // Both, because the first is only promised for the first opening: this
+        // window is hidden and reshown rather than rebuilt. It is what the
+        // 5-minute cadence and the refresh on open both hang from, so it has to
+        // be told about every opening, and AppModel counts these as one.
         .task { model.popoverOpened() }
+        .background(WindowKeyObserver { model.popoverOpened() })
     }
 
     /// Held at the widest board that has loaded rather than derived from the
@@ -80,7 +102,7 @@ struct PopoverView: View {
     private func message(
         title: String, detail: String?, systemImage: String, tint: Color
     ) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Space.s) {
             SwiftUI.Label(title, systemImage: systemImage)
                 .font(.headline)
                 .foregroundStyle(tint == .secondary ? .primary : tint)
@@ -91,14 +113,29 @@ struct PopoverView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             Button("Open Settings…") { showSettings() }
-                .padding(.top, 2)
+                .padding(.top, Space.xs)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 14)
+        .padding(.vertical, Space.m)
     }
 
     private var footer: some View {
-        HStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: Space.s) {
+            // Its own line, and allowed to wrap: this is a sentence saying what
+            // went wrong, and one line beside three buttons cut most of it off.
+            // The empty state has already said it in the message above.
+            if let warning = status.warning, status.level != .empty {
+                SwiftUI.Label(warning, systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            footerRow
+        }
+    }
+
+    private var footerRow: some View {
+        HStack(spacing: Space.m) {
             if coordinator?.isFetching == true {
                 ProgressView().controlSize(.small)
             }
@@ -109,12 +146,6 @@ struct PopoverView: View {
                 .font(.caption)
                 .foregroundStyle(status.level == .stale ? .orange : .secondary)
                 .lineLimit(1)
-            if let warning = status.warning {
-                Text("· \(warning)")
-                    .font(.caption)
-                    .foregroundStyle(.orange)
-                    .lineLimit(1)
-            }
             Spacer()
             // Icon beside the word rather than instead of it. These three are
             // the whole of the app's menu, and an icon-only row would make
@@ -138,6 +169,11 @@ struct PopoverView: View {
             }
             .keyboardShortcut("q")
         }
+        // Quiet on purpose: the board is what this window is for, and three
+        // bordered buttons were the loudest thing in it.
+        .buttonStyle(.borderless)
+        .font(.caption)
+        .foregroundStyle(.secondary)
     }
 
     private func showSettings() {
@@ -147,5 +183,41 @@ struct PopoverView: View {
         // keyboard. Without this the settings window appears unfocused, which
         // is indistinguishable from it having failed to open.
         NSApplication.shared.activate(ignoringOtherApps: true)
+    }
+}
+
+/// Reports each time the window holding this view becomes key.
+///
+/// A MenuBarExtra popover takes key when it opens and loses it when it closes,
+/// so for this window "became key" is "was opened". Filtered to its own window:
+/// the settings window taking key says nothing about the popover.
+private struct WindowKeyObserver: NSViewRepresentable {
+    let becameKey: () -> Void
+
+    func makeNSView(context: Context) -> ObservingView {
+        let view = ObservingView()
+        view.becameKey = becameKey
+        return view
+    }
+
+    func updateNSView(_ nsView: ObservingView, context: Context) {
+        nsView.becameKey = becameKey
+    }
+
+    final class ObservingView: NSView {
+        var becameKey: (() -> Void)?
+        private var observer: (any NSObjectProtocol)?
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if let observer { NotificationCenter.default.removeObserver(observer) }
+            observer = nil
+            guard let window else { return }
+            observer = NotificationCenter.default.addObserver(
+                forName: NSWindow.didBecomeKeyNotification, object: window, queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated { self?.becameKey?() }
+            }
+        }
     }
 }

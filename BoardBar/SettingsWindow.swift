@@ -30,7 +30,7 @@ struct SettingsWindow: View {
     /// are the specific ones — "that's a repository's issues list, not a
     /// project board" beats "invalid URL".
     private var draftError: String? {
-        let trimmed = draft.trimmingCharacters(in: .whitespaces)
+        let trimmed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
         let ref: BoardRef
         do {
@@ -47,19 +47,19 @@ struct SettingsWindow: View {
     }
 
     private var canAdd: Bool {
-        !draft.trimmingCharacters(in: .whitespaces).isEmpty && draftError == nil
+        !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && draftError == nil
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: Space.l) {
             boards
             Divider()
             tokenField
             Divider()
             footer
         }
-        .padding(20)
-        .frame(width: 460)
+        .padding(Space.xl)
+        .frame(width: 480)
         .background(FloatingWindow())
         // Both fields hold pure ASCII — a URL and a token. This is Qurba's
         // TextInput carve-out: a field resolves its own natural alignment, and
@@ -78,15 +78,15 @@ struct SettingsWindow: View {
     // MARK: - Boards
 
     private var boards: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text("Project boards").font(.subheadline.weight(.medium))
+        VStack(alignment: .leading, spacing: Space.s) {
+            Text("Project boards").font(.headline)
 
             if urls.isEmpty {
                 Text("No boards yet. Paste one below.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.vertical, 8)
+                    .padding(.vertical, Space.s)
             } else {
                 List {
                     ForEach(Array(urls.enumerated()), id: \.element) { _, url in
@@ -98,10 +98,10 @@ struct SettingsWindow: View {
                     }
                 }
                 .listStyle(.bordered)
-                .frame(height: min(CGFloat(urls.count) * 32 + 12, 160))
+                .frame(height: min(CGFloat(urls.count) * 44 + 8, 160))
             }
 
-            HStack(spacing: 6) {
+            HStack(spacing: Space.s) {
                 TextField(
                     "https://github.com/users/you/projects/2/views/1",
                     text: $draft
@@ -131,7 +131,7 @@ struct SettingsWindow: View {
     }
 
     private func row(_ url: String) -> some View {
-        HStack(spacing: 8) {
+        HStack(spacing: Space.s) {
             VStack(alignment: .leading, spacing: 1) {
                 Text(label(for: url))
                     .font(.callout)
@@ -176,18 +176,22 @@ struct SettingsWindow: View {
     // MARK: - Token
 
     private var tokenField: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text("GitHub token").font(.subheadline.weight(.medium))
+        VStack(alignment: .leading, spacing: Space.s) {
+            Text("GitHub token").font(.headline)
             // One token for every board. Boards on one account share a
             // credential, and a per-board token is a second thing to get wrong
             // for no gain.
-            SecureField(
-                model.hasToken ? "A token is stored — type to replace it" : "ghp_…",
-                text: $token
-            )
-            .textFieldStyle(.roundedBorder)
-            .onSubmit { saveToken() }
-            HStack(spacing: 6) {
+            HStack(spacing: Space.s) {
+                SecureField(
+                    model.hasToken ? "A token is stored — type to replace it" : "ghp_…",
+                    text: $token
+                )
+                .textFieldStyle(.roundedBorder)
+                .onSubmit { saveToken() }
+                Button("Save token") { saveToken() }
+                    .disabled(token.isEmpty)
+            }
+            HStack(spacing: Space.s) {
                 Text(model.hasToken ? "A token is stored." : "No token stored.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -199,14 +203,18 @@ struct SettingsWindow: View {
                     .buttonStyle(.link)
                     .font(.caption)
                 }
-                Button("Save token") { saveToken() }
-                    .buttonStyle(.link)
-                    .font(.caption)
-                    .disabled(token.isEmpty)
                 Spacer()
                 Text("Needs read:project and repo.")
                     .font(.caption)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(.secondary)
+            }
+            // Said here rather than swallowed: without it, a token that failed
+            // to save looks exactly like one that saved.
+            if let tokenError = model.tokenError {
+                Text(tokenError)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -228,7 +236,7 @@ struct SettingsWindow: View {
 
     private func add() {
         guard canAdd else { return }
-        urls.append(draft.trimmingCharacters(in: .whitespaces))
+        urls.append(draft.trimmingCharacters(in: .whitespacesAndNewlines))
         draft = ""
         commit()
     }
@@ -244,7 +252,8 @@ struct SettingsWindow: View {
     private func saveToken() {
         guard !token.isEmpty else { return }
         model.save(boardURLs: urls, token: token)
-        token = ""
+        // Kept when it did not save, so it need not be fetched from GitHub again.
+        if model.tokenError == nil { token = "" }
     }
 
     private func commit() {

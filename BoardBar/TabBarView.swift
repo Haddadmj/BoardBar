@@ -14,7 +14,7 @@ struct TabBarView: View {
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 4) {
+            HStack(spacing: Space.xs) {
                 ForEach(Array(boardSet.labels.enumerated()), id: \.offset) { index, label in
                     Tab(
                         label: label,
@@ -49,7 +49,7 @@ private struct Tab: View {
 
     var body: some View {
         Button(action: select) {
-            HStack(spacing: 4) {
+            HStack(spacing: Space.xs) {
                 Text(label)
                     .font(.caption.weight(isSelected ? .semibold : .regular))
                     .lineLimit(1)
@@ -65,11 +65,11 @@ private struct Tab: View {
                         .frame(width: 5, height: 5)
                 }
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
+            .padding(.horizontal, Space.s)
+            .padding(.vertical, Space.xs)
             .background(
-                isSelected ? AnyShapeStyle(.selection) : AnyShapeStyle(.clear),
-                in: .rect(cornerRadius: 5)
+                isSelected ? AnyShapeStyle(.quaternary) : AnyShapeStyle(.clear),
+                in: .rect(cornerRadius: Radius.inner)
             )
             .contentShape(.rect)
         }

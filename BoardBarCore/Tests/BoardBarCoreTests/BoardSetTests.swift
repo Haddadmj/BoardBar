@@ -13,7 +13,7 @@ private let layoutJSON = """
 
 private let itemsJSON = """
 {"data":{"user":{"projectV2":{"items":{"totalCount":1,"nodes":[{
-  "fieldValues":{"nodes":[{"name":"Todo","field":{"name":"Status"}}]},
+  "groupValue":{"name":"Todo"},
   "content":{"number":20,"title":"اضافة ختمات للغرفه",
     "url":"https://github.com/Haddadmj/qurba/issues/20",
     "updatedAt":"2026-08-30T19:23:45Z",

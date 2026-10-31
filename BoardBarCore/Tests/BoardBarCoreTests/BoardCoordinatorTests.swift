@@ -1,4 +1,5 @@
 import Foundation
+import Security
 import Testing
 
 @testable import BoardBarCore
@@ -44,7 +45,7 @@ private let layoutJSON = """
 
 private let itemsJSON = """
 {"data":{"user":{"projectV2":{"items":{"totalCount":1,"nodes":[{
-  "fieldValues":{"nodes":[{"name":"Todo","field":{"name":"Status"}}]},
+  "groupValue":{"name":"Todo"},
   "content":{"number":20,"title":"اضافة ختمات للغرفه كنوع اضافي وليس كعمل",
     "url":"https://github.com/Haddadmj/qurba/issues/20",
     "updatedAt":"2026-08-30T19:23:45Z",
@@ -252,12 +253,65 @@ struct BoardCoordinatorTests {
         #expect(await stub.queries.isEmpty)
     }
 
-    @Test("no token reads as unauthorized without touching the network")
+    @Test("no token is its own state, and never touches the network")
     func missingToken() async throws {
         let stub = StubTransport([.success(layoutJSON)])
         let coordinator = makeCoordinator(transport: stub, token: nil)
         #expect(!(await coordinator.refresh(reason: .launch, now: now)))
-        #expect(coordinator.lastError == .unauthorized)
+        #expect(coordinator.lastError == .missingToken)
         #expect(await stub.queries.isEmpty, "never asked GitHub")
+    }
+
+    @Test("a Keychain that cannot be read does not claim the token was rejected")
+    func keychainFailure() async throws {
+        struct LockedKeychain: TokenStore {
+            func read() throws -> String? { throw TokenStoreError.keychain(errSecInteractionNotAllowed) }
+            func write(_ token: String?) throws {}
+        }
+        let store = InMemoryBoardStore()
+        let good = makeCoordinator(
+            transport: StubTransport([.success(layoutJSON), .success(itemsJSON)]), store: store
+        )
+        await good.refresh(reason: .launch, now: now)
+
+        let coordinator = BoardCoordinator(
+            ref: ref, fetcher: BoardFetcher(transport: StubTransport([])),
+            store: store, tokens: LockedKeychain()
+        )
+        await coordinator.refresh(reason: .tick, now: now)
+        guard case .keychain = coordinator.lastError else {
+            Issue.record("expected a keychain error, got \(String(describing: coordinator.lastError))")
+            return
+        }
+        #expect(coordinator.board != nil, "the board stays on screen")
+    }
+
+    @Test("a token saved mid-fetch is not lost to the in-flight drop")
+    func tokenChangedMidFetchRefetches() async throws {
+        let gated = GatedTransport(layout: layoutJSON, items: itemsJSON)
+        let coordinator = makeCoordinator(transport: gated)
+
+        let first = Task { await coordinator.refresh(reason: .launch, now: now) }
+        while await gated.requests == 0 { await Task.yield() }
+
+        await coordinator.tokenChanged()
+        #expect(coordinator.droppedRefreshes == 0)
+        await gated.openGate()
+        _ = await first.value
+        #expect(await gated.requests == 4, "the fetch in flight, then one with the new token")
+    }
+
+    @Test("a board removed mid-fetch does not write back the cache just deleted")
+    func retiredBoardDoesNotSave() async throws {
+        let store = InMemoryBoardStore()
+        let gated = GatedTransport(layout: layoutJSON, items: itemsJSON)
+        let coordinator = makeCoordinator(transport: gated, store: store)
+
+        let first = Task { await coordinator.refresh(reason: .launch, now: now) }
+        while await gated.requests == 0 { await Task.yield() }
+        coordinator.retire()
+        await gated.openGate()
+        _ = await first.value
+        #expect(store.load(ref) == nil)
     }
 }

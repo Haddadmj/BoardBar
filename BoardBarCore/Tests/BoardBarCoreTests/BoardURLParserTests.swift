@@ -78,6 +78,21 @@ struct BoardURLParserTests {
         #expect(throws: BoardURLError.empty) { try BoardURLParser.parse("   ") }
     }
 
+    @Test("a host typed in capitals is still github.com")
+    func hostCase() throws {
+        let ref = try BoardURLParser.parse("https://GitHub.com/users/Haddadmj/projects/2")
+        #expect(ref.projectNumber == 2)
+    }
+
+    /// Logins are case-insensitive, so these are one board, and adding the
+    /// second must be refused as a duplicate rather than polled twice.
+    @Test("an owner typed in another case is the same board")
+    func ownerCase() throws {
+        let a = try BoardURLParser.parse("https://github.com/orgs/Acme/projects/7/views/1")
+        let b = try BoardURLParser.parse("https://github.com/orgs/acme/projects/7/views/1")
+        #expect(a.storageKey == b.storageKey)
+    }
+
     /// Ticket 05 keys the App Group store per board. Two different boards must
     /// not collide, or one silently overwrites the other on disk.
     @Test("storage keys are distinct per board")

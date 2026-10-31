@@ -40,17 +40,32 @@ public struct LiveGitHubTransport: GitHubTransport {
         guard let http = response as? HTTPURLResponse else {
             throw .malformedResponse("no HTTP response")
         }
-        switch http.statusCode {
-        case 200: return data
-        case 401: throw .unauthorized
+        if let failure = Self.failure(
+            status: http.statusCode,
+            rateLimitRemaining: http.value(forHTTPHeaderField: "x-ratelimit-remaining"),
+            retryAfter: http.value(forHTTPHeaderField: "retry-after")
+        ) {
+            throw failure
+        }
+        return data
+    }
+
+    /// What a status code means, or nil when the body is worth reading. Takes
+    /// the headers as plain values so it can be tested without a network.
+    static func failure(
+        status: Int, rateLimitRemaining: String?, retryAfter: String?
+    ) -> GitHubError? {
+        switch status {
+        case 200: return nil
+        case 401: return .unauthorized
+        case 429: return .rateLimited
         case 403:
-            // GitHub returns 403 for both rate limiting and scope problems, and
-            // they need different messages.
-            if http.value(forHTTPHeaderField: "x-ratelimit-remaining") == "0" {
-                throw .rateLimited
-            }
-            throw .forbidden("check that your token has the read:project scope")
-        default: throw .http(status: http.statusCode)
+            // GitHub returns 403 for primary rate limiting, secondary rate
+            // limiting and scope problems. The two limits are told apart by
+            // different headers, and neither is the token's fault.
+            if rateLimitRemaining == "0" || retryAfter != nil { return .rateLimited }
+            return .forbidden("check that your token has the read:project scope")
+        default: return .http(status: status)
         }
     }
 }

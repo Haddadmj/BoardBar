@@ -30,8 +30,9 @@ public enum TextDirection {
         return .leftToRight
     }
 
-    /// Hebrew, Arabic, Syriac, Thaana, N'Ko, Samaritan, Mandaic, and the Arabic
-    /// and Hebrew presentation-form blocks.
+    /// Hebrew, Arabic, Syriac, Thaana, N'Ko, Samaritan, Mandaic, the Arabic and
+    /// Hebrew presentation-form blocks, and the supplementary right-to-left
+    /// scripts.
     private static func isStrongRTL(_ scalar: Unicode.Scalar) -> Bool {
         switch scalar.value {
         case 0x0590...0x05FF,  // Hebrew
@@ -42,10 +43,14 @@ public enum TextDirection {
             0x07C0...0x07FF,  // N'Ko
             0x0800...0x083F,  // Samaritan
             0x0840...0x085F,  // Mandaic
+            0x0870...0x089F,  // Arabic Extended-B
             0x08A0...0x08FF,  // Arabic Extended-A
+            0x200F,  // Right-to-left mark
             0xFB1D...0xFB4F,  // Hebrew presentation forms
             0xFB50...0xFDFF,  // Arabic presentation forms A
-            0xFE70...0xFEFF:  // Arabic presentation forms B
+            0xFE70...0xFEFC,  // Arabic presentation forms B, short of the BOM
+            0x10800...0x10FFF,  // Phoenician, Imperial Aramaic and neighbours
+            0x1E800...0x1EFFF:  // Adlam, Mende Kikakui, Arabic mathematical
             return true
         default:
             return false
@@ -56,6 +61,6 @@ public enum TextDirection {
         // Alphabetic covers Latin, Cyrillic, Greek, CJK and the rest. Digits are
         // not alphabetic, which is what makes "#20 اضافة" resolve right-to-left
         // rather than on its leading number.
-        scalar.properties.isAlphabetic
+        scalar.value == 0x200E || scalar.properties.isAlphabetic
     }
 }

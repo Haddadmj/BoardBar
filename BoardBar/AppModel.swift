@@ -57,6 +57,23 @@ final class AppModel {
     private let tokens: any TokenStore
     private let store: any BoardStore
 
+    /// Whether a token exists — never what it is. The settings field is
+    /// write-only by design: there is no reason to render a credential back to
+    /// someone who already has it, and every reason not to.
+    ///
+    /// Stored rather than asked of the Keychain, which SwiftUI cannot observe:
+    /// removing a token changed nothing it could see, so the window went on
+    /// saying one was stored.
+    private(set) var hasToken = false
+
+    /// Why the last attempt to change the token failed. A token that did not
+    /// save and a field that cleared anyway read exactly like success.
+    private(set) var tokenError: String?
+
+    /// When the popover was last reported open. Its two signals both fire on
+    /// the first opening, and that is one opening.
+    private var lastOpenReport: Date?
+
     init() {
         let tokens = KeychainTokenStore()
         let store = SharedContainer.makeBoardStore()
@@ -65,16 +82,9 @@ final class AppModel {
         boardSet = BoardSet(refs: BoardURLParser.storedRefs()) { ref in
             BoardCoordinator(ref: ref, store: store, tokens: tokens)
         }
+        hasToken = (try? tokens.read()) != nil
         startTimer()
     }
-
-    /// Whether a token exists — never what it is. The settings field is
-    /// write-only by design: there is no reason to render a credential back to
-    /// someone who already has it, and every reason not to.
-    var hasToken: Bool { (try? tokens.read()) != nil }
-
-    /// True on a first run, where an empty board would explain nothing.
-    var needsConfiguration: Bool { boardSet.boards.isEmpty || !hasToken }
 
     var boardURLStrings: [String] { BoardURLParser.storedURLs() }
 
@@ -83,10 +93,10 @@ final class AppModel {
         // An empty field means "leave the stored token alone", not "delete it".
         // The field renders empty even when a token exists, so treating empty
         // as a delete would wipe the token every time settings are saved.
-        let tokenChanged = !(token ?? "").isEmpty
-        if let token, !token.isEmpty {
-            try? tokens.write(token)
-        }
+        // Trimmed, because a token copied with its line ending is a token
+        // GitHub rejects for no reason anyone could see.
+        let newToken = token?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let tokenChanged = !newToken.isEmpty && write(newToken)
 
         // A removed board takes its cache with it. An orphaned file would mean
         // a board that was removed and later added back coming up showing what
@@ -97,14 +107,29 @@ final class AppModel {
         Task {
             // A board added just now has never fetched; one that was already
             // there has, and only needs telling when the credential changed
-            // underneath it.
-            for board in boardSet.boards where board.board == nil {
-                await board.refresh(reason: .configurationChanged)
-            }
+            // underneath it. A new credential tells all of them, so the first
+            // case would only fetch the new boards twice.
             if tokenChanged {
                 for board in boardSet.boards { await board.tokenChanged() }
+            } else {
+                for board in boardSet.boards where board.board == nil {
+                    await board.refresh(reason: .configurationChanged)
+                }
             }
             self.report("settingsSaved")
+        }
+    }
+
+    /// Returns whether the write took, having said so if it did not.
+    private func write(_ token: String?) -> Bool {
+        do {
+            try tokens.write(token)
+            hasToken = token != nil
+            tokenError = nil
+            return true
+        } catch {
+            tokenError = (error as? TokenStoreError)?.message ?? error.localizedDescription
+            return false
         }
     }
 
@@ -122,14 +147,14 @@ final class AppModel {
     }
 
     func clearToken() {
-        try? tokens.write(nil)
+        guard write(nil) else { return }
         Task {
             for board in boardSet.boards { await board.tokenChanged() }
         }
     }
 
     private func startTimer() {
-        timer = Timer.scheduledTimer(withTimeInterval: tickInterval, repeats: true) { [weak self] _ in
+        let timer = Timer(timeInterval: tickInterval, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }
                 self.now = Date()
@@ -141,6 +166,11 @@ final class AppModel {
                 if await self.boardSet.tick() { self.report("tick") }
             }
         }
+        // Lets the system coalesce a once-a-minute wake with others.
+        timer.tolerance = 10
+        // Common modes, so scrolling the board does not stall the poll.
+        RunLoop.main.add(timer, forMode: .common)
+        self.timer = timer
         // The board should be current when the popover first opens, not a
         // minute later.
         Task {
@@ -153,6 +183,8 @@ final class AppModel {
 
     func popoverOpened() {
         now = Date()
+        if let lastOpenReport, now.timeIntervalSince(lastOpenReport) < 1 { return }
+        lastOpenReport = now
         Task {
             await boardSet.popoverOpened()
             report("popoverOpened")

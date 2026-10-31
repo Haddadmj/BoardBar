@@ -59,7 +59,23 @@ struct FreshnessTests {
     func emptyState() {
         #expect(summary(hasBoard: false).level == .empty)
         #expect(summary(hasBoard: false).footer == "Never updated")
-        #expect(summary(hasBoard: false, error: .rateLimited).footer.contains("Rate-limited"))
+        #expect(summary(hasBoard: false, error: .rateLimited).warning?.contains("Rate-limited") == true)
+    }
+
+    /// Mid-setup, nobody has rejected anything.
+    @Test("a missing token is not worded as a rejected one")
+    func missingToken() {
+        let s = summary(age: 10, error: .missingToken)
+        #expect(s.level == .missingToken)
+        #expect(s.showsErrorIcon)
+        #expect(s.footer == "No token")
+    }
+
+    @Test("a locked Keychain keeps the board and states the problem")
+    func keychainKeepsBoard() {
+        let s = summary(age: 10, error: .keychain("Keychain error: locked"))
+        #expect(s.level == .fresh)
+        #expect(s.warning == "Keychain error: locked")
     }
 
     @Test(

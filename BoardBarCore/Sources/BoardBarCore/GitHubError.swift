@@ -5,6 +5,13 @@ public enum GitHubError: Error, Equatable, Sendable {
     /// the maintainer pastes a new token — ticket 08 replaces the board rather
     /// than annotating it.
     case unauthorized
+    /// No token has been stored yet. Not `unauthorized`: GitHub has refused
+    /// nothing, and telling someone mid-setup their token was rejected sends
+    /// them looking for a problem they do not have.
+    case missingToken
+    /// The Keychain could not be read — locked, usually, and usually temporary.
+    /// Says nothing about whether the token is any good.
+    case keychain(String)
     case forbidden(String)
     case rateLimited
     case http(status: Int)
@@ -12,15 +19,16 @@ public enum GitHubError: Error, Equatable, Sendable {
     case graphQL([String])
     case boardNotFound
     case viewNotFound(number: Int)
-    /// The view groups by something this version cannot render as columns —
-    /// an iteration, a multi-select, or a plain text field.
-    case unsupportedGrouping(typeName: String)
     case malformedResponse(String)
 
     public var message: String {
         switch self {
         case .unauthorized:
             "Your token was rejected. Paste a new one in Settings."
+        case .missingToken:
+            "No token stored. Add one in Settings."
+        case let .keychain(detail):
+            detail
         case let .forbidden(detail):
             "GitHub refused the request: \(detail)"
         case .rateLimited:
@@ -35,9 +43,6 @@ public enum GitHubError: Error, Equatable, Sendable {
             "No project board at that URL, or your token can't see it."
         case let .viewNotFound(number):
             "That project has no view \(number)."
-        case let .unsupportedGrouping(typeName):
-            "This view groups by \(typeName), which BoardBar can't show as "
-                + "columns yet. Showing the project's Status field instead."
         case let .malformedResponse(detail):
             "Unexpected response from GitHub: \(detail)"
         }

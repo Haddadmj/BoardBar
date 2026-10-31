@@ -58,6 +58,23 @@ struct TextDirectionTests {
         #expect(TextDirection.resolve("\u{FE8D}") == .rightToLeft)
     }
 
+    @Test("a byte-order mark is not a right-to-left character")
+    func byteOrderMark() {
+        #expect(TextDirection.resolve("\u{FEFF}Fix") == .leftToRight)
+    }
+
+    @Test("explicit direction marks count as strong")
+    func directionMarks() {
+        #expect(TextDirection.resolve("\u{200F}(1) fix") == .rightToLeft)
+        #expect(TextDirection.resolve("\u{200E}(1) اضافة") == .leftToRight)
+    }
+
+    @Test("Arabic Extended-B and supplementary scripts resolve right-to-left")
+    func furtherRanges() {
+        #expect(TextDirection.resolve("\u{0870}") == .rightToLeft)
+        #expect(TextDirection.resolve("\u{1E900}") == .rightToLeft)
+    }
+
     @Test("CJK is strong and left-to-right")
     func cjk() {
         #expect(TextDirection.resolve("修复错误") == .leftToRight)

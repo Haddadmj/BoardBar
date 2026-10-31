@@ -37,6 +37,14 @@ public final class BoardCoordinator {
     /// inferring it from a request count.
     public private(set) var droppedRefreshes = 0
 
+    /// Set when a token change arrives mid-fetch. That fetch went out with the
+    /// old credential, so unlike any other overlapping refresh this one cannot
+    /// be dropped: the answer in flight is already out of date.
+    private var refreshAfterFetch = false
+    /// Set once this board has left the configuration, so a fetch still in
+    /// flight cannot write back the cache file its removal just deleted.
+    private var isRetired = false
+
     public var ref: BoardRef? { didSet { if ref != oldValue { configurationChanged() } } }
 
     private let fetcher: BoardFetcher
@@ -114,7 +122,16 @@ public final class BoardCoordinator {
     /// identity has not changed — only whether it can be read.
     public func tokenChanged() async {
         lastError = nil
+        guard !isFetching else {
+            refreshAfterFetch = true
+            return
+        }
         await refresh(reason: .configurationChanged)
+    }
+
+    /// Call when this board is removed from the configuration.
+    public func retire() {
+        isRetired = true
     }
 
     // MARK: - The fetch
@@ -135,15 +152,32 @@ public final class BoardCoordinator {
         lastAttemptAt = now
 
         let token: String?
-        do { token = try tokens.read() } catch { token = nil }
+        do {
+            token = try tokens.read()
+        } catch {
+            // A locked Keychain says nothing about the token. Reporting it as
+            // rejected would replace a good board and ask for a new credential
+            // over something that clears by itself.
+            lastError = .keychain((error as? TokenStoreError)?.message ?? error.localizedDescription)
+            return false
+        }
         guard let token, !token.isEmpty else {
-            lastError = .unauthorized
+            lastError = .missingToken
             return false
         }
 
         isFetching = true
-        defer { isFetching = false }
+        let succeeded = await fetch(ref, token: token, now: now)
+        isFetching = false
 
+        if refreshAfterFetch {
+            refreshAfterFetch = false
+            return await refresh(reason: .configurationChanged)
+        }
+        return succeeded
+    }
+
+    private func fetch(_ ref: BoardRef, token: String, now: Date) async -> Bool {
         do {
             let fetched = try await fetcher.fetch(ref, token: token, now: now)
             board = fetched
@@ -152,7 +186,7 @@ public final class BoardCoordinator {
             // Saved only on success, so a failed poll leaves both the stored
             // board and its timestamp untouched and "updated 40m ago" stays a
             // fact rather than a decoration.
-            try? store.save(fetched, for: ref)
+            if !isRetired { try? store.save(fetched, for: ref) }
             return true
         } catch {
             // The last good board stays on screen. Ticket 08 decides how that
