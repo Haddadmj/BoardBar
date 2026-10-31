@@ -53,7 +53,9 @@ public enum BoardURLParser {
         guard let components = URLComponents(string: normalized), let host = components.host else {
             throw .notAURL
         }
-        let bareHost = host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
+        // Hosts are case-insensitive, and URLComponents keeps whatever was typed.
+        let lowered = host.lowercased()
+        let bareHost = lowered.hasPrefix("www.") ? String(lowered.dropFirst(4)) : lowered
         guard bareHost == "github.com" else { throw .notGitHub(host: bareHost) }
 
         let segments = components.path.split(separator: "/").map(String.init)

@@ -29,7 +29,10 @@ public struct BoardRef: Codable, Hashable, Sendable {
     /// Stable key for the App Group store (ticket 05). Keyed per board rather
     /// than a single `board.json` so two widgets can show two boards later
     /// without migrating what is already on disk.
+    ///
+    /// The owner is lowercased because GitHub logins are case-insensitive, so
+    /// `Acme` and `acme` are the same board and must not become two tabs.
     public var storageKey: String {
-        "\(ownerKind.rawValue)-\(owner)-\(projectNumber)-\(viewNumber.map(String.init) ?? "default")"
+        "\(ownerKind.rawValue)-\(owner.lowercased())-\(projectNumber)-\(viewNumber.map(String.init) ?? "default")"
     }
 }

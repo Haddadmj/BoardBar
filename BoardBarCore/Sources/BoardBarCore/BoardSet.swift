@@ -94,6 +94,9 @@ public final class BoardSet {
 
         let survivingKeys = Set(refs.map(\.storageKey))
         let removed = previous.compactMap(\.ref).filter { !survivingKeys.contains($0.storageKey) }
+        for coordinator in previous {
+            if let key = coordinator.ref?.storageKey, !survivingKeys.contains(key) { coordinator.retire() }
+        }
 
         // The selected board keeps its selection wherever it moved to. When it
         // is the one that was removed, the index stays put and lands on the tab

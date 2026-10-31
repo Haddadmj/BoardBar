@@ -13,6 +13,9 @@ public enum StatusLevel: String, Sendable, Equatable {
     /// The token was rejected. Nothing will fix this until it is replaced, so
     /// it replaces the board rather than annotating it.
     case unauthorized
+    /// No token is stored. Replaces the board for the same reason, but nobody
+    /// rejected anything, and it is not worded as though they had.
+    case missingToken
     /// Nothing has ever been fetched.
     case empty
 }
@@ -27,7 +30,7 @@ public struct StatusSummary: Sendable, Equatable {
     public let warning: String?
 
     public var dimsMenuBarIcon: Bool { level == .stale }
-    public var showsErrorIcon: Bool { level == .unauthorized }
+    public var showsErrorIcon: Bool { level == .unauthorized || level == .missingToken }
 }
 
 public enum Freshness {
@@ -53,11 +56,17 @@ public enum Freshness {
             )
         }
 
+        if error == .missingToken {
+            return StatusSummary(level: .missingToken, footer: "No token", warning: nil)
+        }
+
         guard hasBoard, let lastFetchedAt else {
             return StatusSummary(
                 level: .empty,
-                footer: error.map { $0.message } ?? "Never updated",
-                warning: nil
+                footer: "Never updated",
+                // The reason nothing loaded, kept apart from the timestamp: it
+                // is usually a full sentence, and the footer is one line.
+                warning: error?.message
             )
         }
 

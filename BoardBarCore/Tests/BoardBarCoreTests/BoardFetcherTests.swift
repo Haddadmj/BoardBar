@@ -39,7 +39,7 @@ private let layoutBody = """
 
 private let itemsBody = """
 {"data":{"user":{"projectV2":{"items":{"totalCount":1,"nodes":[{
-  "fieldValues":{"nodes":[{},{},{},{"name":"Todo","field":{"name":"Status"}}]},
+  "groupValue":{"name":"Todo"},
   "content":{"number":20,
     "title":"اضافة ختمات للغرفه كنوع اضافي وليس كعمل",
     "url":"https://github.com/Haddadmj/qurba/issues/20",
@@ -165,12 +165,98 @@ struct BoardFetcherTests {
     @Test("an item with no status lands in its own leading column")
     func orphanItems() async throws {
         let orphan = itemsBody.replacingOccurrences(
-            of: #"{"name":"Todo","field":{"name":"Status"}}"#, with: "{}"
+            of: #""groupValue":{"name":"Todo"}"#, with: #""groupValue":null"#
         )
         let stub = StubTransport([.success(layoutBody), .success(orphan)])
         let board = try await BoardFetcher(transport: stub).fetch(targetRef, token: "t")
         #expect(board.columns.first?.name == "No Status")
         #expect(board.columns.first?.count == 1)
+    }
+
+    @Test("the no-value column is named after the field the view groups by")
+    func noValueColumnFollowsTheField() async throws {
+        let byPriority = layoutBody.replacingOccurrences(
+            of: #""name":"Status","options":[\#n        {"name":"Todo"}"#,
+            with: #""name":"Priority","options":[\#n        {"name":"Todo"}"#
+        )
+        #expect(byPriority != layoutBody)
+        let orphan = itemsBody.replacingOccurrences(
+            of: #""groupValue":{"name":"Todo"}"#, with: #""groupValue":null"#
+        )
+        let stub = StubTransport([.success(byPriority), .success(orphan)])
+        let board = try await BoardFetcher(transport: stub).fetch(targetRef, token: "t")
+        #expect(board.columns.first?.name == "No Priority")
+        #expect(await stub.variables[1]["field"] == "Priority")
+    }
+
+    @Test("an option named like the no-value column does not produce two of it")
+    func noValueColumnCollision() async throws {
+        let named = layoutBody.replacingOccurrences(of: #"{"name":"Rejected"}"#, with: #"{"name":"No Status"}"#)
+        let orphan = itemsBody.replacingOccurrences(
+            of: #""groupValue":{"name":"Todo"}"#, with: #""groupValue":null"#
+        )
+        let stub = StubTransport([.success(named), .success(orphan)])
+        let board = try await BoardFetcher(transport: stub).fetch(targetRef, token: "t")
+        #expect(board.columns.filter { $0.name == "No Status" }.count == 1)
+        #expect(board.shownCount == 1)
+    }
+
+    /// Shapes captured from the live API on 2026-10-31.
+    @Test("a project that does not exist reads as not found, not as raw GraphQL")
+    func projectNotFound() async {
+        let body = #"{"data":{"user":{"projectV2":null}},"errors":[{"type":"NOT_FOUND","message":"Could not resolve to a ProjectV2 with the number 99999."}]}"#
+        let stub = StubTransport([.success(body)])
+        await #expect(throws: GitHubError.boardNotFound) {
+            try await BoardFetcher(transport: stub).fetch(targetRef, token: "t")
+        }
+    }
+
+    @Test("a view that does not exist reads as not found, not as raw GraphQL")
+    func viewNotFound() async {
+        let body = #"{"data":{"user":{"projectV2":{"title":"Qurba bug reports","view":null}}},"errors":[{"type":"NOT_FOUND","message":"Could not resolve to an Objects::ProjectV2View with the number 2"}]}"#
+        let stub = StubTransport([.success(body)])
+        await #expect(throws: GitHubError.viewNotFound(number: 2)) {
+            try await BoardFetcher(transport: stub).fetch(targetRef, token: "t")
+        }
+    }
+
+    @Test("one unreadable item does not cost the rest of the board")
+    func partialErrorsKeepTheBoard() async throws {
+        let partial = String(itemsBody.dropLast(6))
+            + #",null,{"groupValue":null,"content":null}]}}}},"errors":[{"type":"FORBIDDEN","message":"Resource not accessible by personal access token"}]}"#
+        let withTotal = partial.replacingOccurrences(of: "\"totalCount\":1", with: "\"totalCount\":3")
+        let stub = StubTransport([.success(layoutBody), .success(withTotal)])
+        let board = try await BoardFetcher(transport: stub).fetch(targetRef, token: "t")
+        #expect(board.shownCount == 1)
+        #expect(board.isTruncated, "the two it could not read are still accounted for")
+    }
+
+    @Test("GitHub's GraphQL rate limit reads as rate limiting")
+    func graphQLRateLimit() async {
+        let body = #"{"data":null,"errors":[{"type":"RATE_LIMITED","message":"API rate limit exceeded"}]}"#
+        let stub = StubTransport([.success(body)])
+        await #expect(throws: GitHubError.rateLimited) {
+            try await BoardFetcher(transport: stub).fetch(targetRef, token: "t")
+        }
+    }
+
+    @Test("every form of rate limiting is told apart from a scope problem")
+    func statusClassification() {
+        let classify = LiveGitHubTransport.failure
+        #expect(classify(200, nil, nil) == nil)
+        #expect(classify(401, nil, nil) == .unauthorized)
+        #expect(classify(429, nil, nil) == .rateLimited)
+        #expect(classify(403, "0", nil) == .rateLimited)
+        #expect(classify(403, "4000", "60") == .rateLimited, "secondary limit")
+        #expect(classify(403, "4000", nil) == .forbidden("check that your token has the read:project scope"))
+        #expect(classify(502, nil, nil) == .http(status: 502))
+    }
+
+    @Test("two repositories' issues with one number stay two cards")
+    func cardIdentityAcrossRepositories() {
+        let a = Card(number: 20, title: "a", url: URL(string: "https://github.com/x/a/issues/20")!, repository: "x/a", updatedAt: Date(), labels: [])
+        let b = Card(number: 20, title: "b", url: URL(string: "https://github.com/x/b/issues/20")!, repository: "x/b", updatedAt: Date(), labels: [])
+        #expect(a.id != b.id)
     }
 
     @Test("truncation past the item limit is visible, not silent")

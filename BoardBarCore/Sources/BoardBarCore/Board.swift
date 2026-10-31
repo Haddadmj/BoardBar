@@ -19,7 +19,10 @@ public struct Card: Codable, Hashable, Sendable, Identifiable {
     public let updatedAt: Date
     public let labels: [IssueLabel]
 
-    public var id: Int { number }
+    /// The URL, not the number: a board can hold issues from several
+    /// repositories, and #20 in one is not #20 in another. Two cards sharing an
+    /// identity inside one `ForEach` render as the same card.
+    public var id: URL { url }
 
     public init(
         number: Int, title: String, url: URL,

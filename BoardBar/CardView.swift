@@ -38,47 +38,62 @@ struct CardView: View {
     /// title is the only thing here that is actually Arabic.
     private var direction: BaseDirection { TextDirection.resolve(card.title) }
 
+    @State private var isHovered = false
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                if card.isStale(asOf: now) {
-                    Circle()
-                        .fill(.orange)
-                        .frame(width: 6, height: 6)
-                        .help("No activity in over 7 days")
+        // A real button rather than a tap gesture, so a card is a control to
+        // VoiceOver and not just some text that happens to respond.
+        Button(action: open) {
+            VStack(alignment: .leading, spacing: Space.xs) {
+                HStack(alignment: .firstTextBaseline, spacing: Space.xs) {
+                    if card.isStale(asOf: now) {
+                        Circle()
+                            .fill(.orange)
+                            .frame(width: 6, height: 6)
+                            .help("No activity in over 7 days")
+                    }
+                    Text("#\(card.number)")
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                    Spacer(minLength: 0)
                 }
-                Text("#\(card.number)")
-                    .font(.caption.monospaced())
-                    .foregroundStyle(.secondary)
-                Spacer(minLength: 0)
-            }
 
-            Text(card.title)
-                .font(.callout)
-                .lineLimit(3)
-                // Without this a Text inside a stack truncates instead of
-                // wrapping, however high its line limit is.
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: alignment)
-                // The base direction of this run only. An Arabic paragraph
-                // settles against its own edge, which is what makes a wrapped
-                // title and any trailing neutrals order correctly.
-                .environment(\.layoutDirection, direction.layoutDirection)
+                Text(card.title)
+                    .font(.callout)
+                    .foregroundStyle(.primary)
+                    .lineLimit(3)
+                    // Without this a Text inside a stack truncates instead of
+                    // wrapping, however high its line limit is.
+                    .fixedSize(horizontal: false, vertical: true)
+                    // `.leading`, not a side chosen by direction. Leading is
+                    // logical and the environment below reaches this frame too,
+                    // so it already means the right edge for an Arabic title.
+                    // Asking for `.trailing` there lands on the left, which is
+                    // the swap the README warns about.
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    // The base direction of this run only. An Arabic paragraph
+                    // settles against its own edge, which is what makes a wrapped
+                    // title and any trailing neutrals order correctly.
+                    .environment(\.layoutDirection, direction.layoutDirection)
 
-            if !card.labels.isEmpty {
-                LabelStrip(labels: card.labels)
+                if !card.labels.isEmpty {
+                    LabelStrip(labels: card.labels)
+                        .padding(.top, Space.xs)
+                }
             }
+            .padding(Space.s)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                Color(nsColor: isHovered ? .selectedContentBackgroundColor : .controlBackgroundColor)
+                    .opacity(isHovered ? 0.12 : 1),
+                in: .rect(cornerRadius: Radius.card)
+            )
+            .shadow(color: .black.opacity(0.08), radius: 1, y: 1)
+            .contentShape(.rect)
         }
-        .padding(8)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.quaternary.opacity(0.5), in: .rect(cornerRadius: 6))
-        .contentShape(.rect)
-        .onTapGesture { open() }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
         .help(card.title)
-    }
-
-    private var alignment: Alignment {
-        direction == .rightToLeft ? .trailing : .leading
     }
 
     /// Opens the issue on github.com and gets out of the way. The card body is
@@ -100,11 +115,12 @@ private struct LabelStrip: View {
     let labels: [IssueLabel]
 
     var body: some View {
-        HStack(spacing: 4) {
+        FlowLayout(spacing: Space.xs) {
             ForEach(labels, id: \.name) { label in
                 Text(label.name)
                     .font(.caption2)
-                    .padding(.horizontal, 5)
+                    .lineLimit(1)
+                    .padding(.horizontal, Space.xs + 2)
                     .padding(.vertical, 1)
                     .background(
                         (Color(githubHex: label.color) ?? .secondary).opacity(0.25),
@@ -116,5 +132,62 @@ private struct LabelStrip: View {
                     .environment(\.layoutDirection, TextDirection.resolve(label.name).layoutDirection)
             }
         }
+    }
+}
+
+/// Lays its children out left to right, wrapping when a row is full.
+///
+/// A plain HStack has nowhere to put five labels in a card this narrow, so it
+/// squeezes them until each one wraps inside its own capsule. No stack in
+/// SwiftUI wraps, so this one is written out.
+private struct FlowLayout: Layout {
+    let spacing: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let rows = rows(in: proposal.width ?? .infinity, subviews: subviews)
+        let height = rows.map(\.height).reduce(0, +) + spacing * CGFloat(max(0, rows.count - 1))
+        return CGSize(width: proposal.width ?? rows.map(\.width).max() ?? 0, height: height)
+    }
+
+    func placeSubviews(
+        in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()
+    ) {
+        var y = bounds.minY
+        for row in rows(in: bounds.width, subviews: subviews) {
+            var x = bounds.minX
+            for (index, size) in row.items {
+                subviews[index].place(
+                    at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size)
+                )
+                x += size.width + spacing
+            }
+            y += row.height + spacing
+        }
+    }
+
+    private struct Row {
+        var items: [(index: Int, size: CGSize)] = []
+        var width: CGFloat = 0
+        var height: CGFloat = 0
+    }
+
+    private func rows(in width: CGFloat, subviews: Subviews) -> [Row] {
+        var rows: [Row] = []
+        var row = Row()
+        for index in subviews.indices {
+            // Capped at the row, so one very long label truncates rather than
+            // pushing past the edge of the card.
+            let natural = subviews[index].sizeThatFits(.unspecified)
+            let size = CGSize(width: min(natural.width, width), height: natural.height)
+            if !row.items.isEmpty, row.width + spacing + size.width > width {
+                rows.append(row)
+                row = Row()
+            }
+            row.width += (row.items.isEmpty ? 0 : spacing) + size.width
+            row.height = max(row.height, size.height)
+            row.items.append((index, size))
+        }
+        if !row.items.isEmpty { rows.append(row) }
+        return rows
     }
 }

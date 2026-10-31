@@ -76,11 +76,7 @@ public struct BoardFetcher: Sendable {
         let data = try await transport.post(
             query: query, variables: ["owner": ref.owner], token: token
         )
-        let json = try decodeGraphQL(data)
-        guard
-            let owner = json[rootField(ref)] as? [String: Any],
-            let project = owner["projectV2"] as? [String: Any]
-        else { throw .boardNotFound }
+        let project = try decodeProject(data, ref: ref)
 
         var droppedFilter: String?
         // Read off the same nodes the layout query already visits, so a tab
@@ -154,19 +150,14 @@ public struct BoardFetcher: Sendable {
         // No pagination: the design target is ~30 items. Truncation past 100 is
         // surfaced on the board rather than hidden.
         let query = """
-        query($owner: String!, $q: String!) {
+        query($owner: String!, $q: String!, $field: String!) {
           \(rootField(ref))(login: $owner) {
             projectV2(number: \(ref.projectNumber)) {
               items(first: \(itemLimit), query: $q) {
                 totalCount
                 nodes {
-                  fieldValues(first: 20) {
-                    nodes {
-                      ... on ProjectV2ItemFieldSingleSelectValue {
-                        name
-                        field { ... on ProjectV2FieldCommon { name } }
-                      }
-                    }
+                  groupValue: fieldValueByName(name: $field) {
+                    ... on ProjectV2ItemFieldSingleSelectValue { name }
                   }
                   content {
                     ... on Issue {
@@ -187,30 +178,36 @@ public struct BoardFetcher: Sendable {
 
         let data = try await transport.post(
             query: query,
-            variables: ["owner": ref.owner, "q": layout.filter],
+            variables: ["owner": ref.owner, "q": layout.filter, "field": layout.groupFieldName],
             token: token
         )
-        let json = try decodeGraphQL(data)
+        let project = try decodeProject(data, ref: ref)
         guard
-            let owner = json[rootField(ref)] as? [String: Any],
-            let project = owner["projectV2"] as? [String: Any],
             let items = project["items"] as? [String: Any],
-            let nodes = items["nodes"] as? [[String: Any]]
+            // A node can itself be null when GitHub could not resolve it, and
+            // one null must not make the whole array fail to cast.
+            let nodes = (items["nodes"] as? [Any])?.compactMap({ $0 as? [String: Any] })
         else { throw .malformedResponse("no items in response") }
 
+        // Named after the field the board is grouped by, as GitHub names it: a
+        // view grouped by Priority has "No Priority", not "No Status".
+        let noValueColumn = "No \(layout.groupFieldName)"
         var buckets: [String: [Card]] = [:]
         for node in nodes {
             guard let card = Self.card(from: node) else { continue }
-            let column = Self.groupValue(of: node, fieldNamed: layout.groupFieldName)
-                ?? Self.noValueColumn
+            let column = (node["groupValue"] as? [String: Any])?["name"] as? String ?? noValueColumn
             buckets[column, default: []].append(card)
         }
 
         var columns = layout.columnNames.map { Column(name: $0, cards: buckets[$0] ?? []) }
         // GitHub shows unassigned items in their own column; mirroring that is
-        // more faithful than dropping them, but only when it is non-empty.
-        if let orphans = buckets[Self.noValueColumn], !orphans.isEmpty {
-            columns.insert(Column(name: Self.noValueColumn, cards: orphans), at: 0)
+        // more faithful than dropping them, but only when it is non-empty. An
+        // option that happens to carry the same name has already taken them,
+        // and a second column would share its identity.
+        if let orphans = buckets[noValueColumn], !orphans.isEmpty,
+            !layout.columnNames.contains(noValueColumn)
+        {
+            columns.insert(Column(name: noValueColumn, cards: orphans), at: 0)
         }
 
         return Board(
@@ -222,22 +219,6 @@ public struct BoardFetcher: Sendable {
             projectTitle: layout.projectTitle,
             viewName: layout.viewName
         )
-    }
-
-    static let noValueColumn = "No Status"
-
-    static func groupValue(of node: [String: Any], fieldNamed name: String) -> String? {
-        guard
-            let values = (node["fieldValues"] as? [String: Any])?["nodes"] as? [[String: Any]]
-        else { return nil }
-        for value in values {
-            guard
-                let field = value["field"] as? [String: Any],
-                field["name"] as? String == name
-            else { continue }
-            return value["name"] as? String
-        }
-        return nil
     }
 
     static func card(from node: [String: Any]) -> Card? {
@@ -269,22 +250,34 @@ public struct BoardFetcher: Sendable {
 
     // MARK: - GraphQL envelope
 
-    private func decodeGraphQL(_ data: Data) throws(GitHubError) -> [String: Any] {
+    /// Unwraps the response down to the project.
+    ///
+    /// GraphQL errors arrive with HTTP 200, and alongside partial data. One
+    /// issue in a repository the token cannot read puts an error beside an
+    /// otherwise complete board, so an error is only fatal when it cost us the
+    /// project itself; the unreadable item just comes back empty, and the
+    /// "Showing x of y" notice accounts for it.
+    private func decodeProject(_ data: Data, ref: BoardRef) throws(GitHubError) -> [String: Any] {
         guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw .malformedResponse("body was not a JSON object")
         }
-        // A GraphQL error arrives with HTTP 200, so this is the only place a
-        // bad token or a missing board is detected on the happy path.
+        let payload = root["data"] as? [String: Any]
+        let owner = payload?[rootField(ref)] as? [String: Any]
+        let project = owner?["projectV2"] as? [String: Any]
+
         if let errors = root["errors"] as? [[String: Any]], !errors.isEmpty {
             let messages = errors.compactMap { $0["message"] as? String }
+            let types = errors.compactMap { $0["type"] as? String }
             if messages.contains(where: { $0.localizedCaseInsensitiveContains("bad credentials") }) {
                 throw .unauthorized
             }
+            if types.contains("RATE_LIMITED") { throw .rateLimited }
+            if let project { return project }
+            if types.contains("NOT_FOUND") { throw .boardNotFound }
             throw .graphQL(messages)
         }
-        guard let payload = root["data"] as? [String: Any] else {
-            throw .malformedResponse("no data field")
-        }
-        return payload
+        guard payload != nil else { throw .malformedResponse("no data field") }
+        guard let project else { throw .boardNotFound }
+        return project
     }
 }
