@@ -29,6 +29,7 @@ beat it on features.
 - macOS 14+
 - A GitHub account with access to the Projects v2 board you want to mirror
 - Xcode 26 / Swift 6 and [XcodeGen](https://github.com/yonaskolb/XcodeGen) to build
+- [create-dmg](https://github.com/create-dmg/create-dmg) to package a release
 - An Apple Developer Program membership to sign it (see [Build](#build))
 
 ## Setup
@@ -49,6 +50,9 @@ beat it on features.
 
 Left-click the menu-bar icon for the board; click any card to open it on
 github.com.
+
+Issues are what BoardBar shows. Draft items and pull requests on a board are left
+out, and the board says so with a "Showing x of y items" notice.
 
 ## Install
 
@@ -82,12 +86,15 @@ teams.
 
 ```sh
 export DEVELOPER_ID="Developer ID Application: Your Name (TEAMID)"
-export AC_KEYCHAIN_PROFILE="notary"   # see release.sh header for one-time setup
+export AC_KEYCHAIN_PROFILE="notary"   # the default; see release.sh header for one-time setup
 ./scripts/release.sh                  # → .build/dist/BoardBar.dmg
 ```
 
 `release.sh` regenerates the project, archives, exports a Developer ID build,
-packages a DMG, then notarizes and staples it.
+notarizes and staples the app, packages it into a DMG, notarizes and staples
+that too, then checks the DMG and the app inside it the way Gatekeeper will. It
+stops if Apple rejects either, and prints Apple's reasons. Skipping notarization
+takes `SKIP_NOTARIZE=1`.
 
 Unlike a plain menu-bar binary there is no unsigned fallback, and that is the
 App Group's doing: a sandboxed app carrying one needs a real provisioning
@@ -105,6 +112,10 @@ The PNGs are committed because they are build inputs, and
 ```sh
 swift Tools/make-appicon.swift
 ```
+
+The picture behind the DMG window works the same way: `Tools/dmg-background.tiff`
+comes from `swift Tools/make-dmg-background.swift`, which refuses to write a
+background that Finder's icon names would be hard to read on in either appearance.
 
 ## Tests
 

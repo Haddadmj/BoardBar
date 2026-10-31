@@ -11,6 +11,10 @@
 #     (create once: xcrun notarytool store-credentials notary \
 #        --apple-id you@example.com --team-id TEAMID --password <app-specific-pw>)
 #
+# AC_KEYCHAIN_PROFILE defaults to "notary". A build that is not notarized will
+# not open on anyone else's Mac, so skipping it takes SKIP_NOTARIZE=1 rather than
+# being what happens when a variable is unset.
+#
 # Unlike the other apps here there is no unsigned fallback. BoardBar is
 # sandboxed and carries an App Group, which needs a real provisioning profile —
 # an ad-hoc signature cannot produce a bundle that runs anywhere else.
@@ -25,6 +29,8 @@ EXPORT_DIR="$BUILD/export"
 DIST="$BUILD/dist"
 DMG="$DIST/$APP_NAME.dmg"
 APP="$EXPORT_DIR/$APP_NAME.app"
+AC_KEYCHAIN_PROFILE="${AC_KEYCHAIN_PROFILE:-notary}"
+SKIP_NOTARIZE="${SKIP_NOTARIZE:-}"
 
 if [ -z "${DEVELOPER_ID:-}" ]; then
   echo "error: DEVELOPER_ID is not set." >&2
@@ -35,6 +41,35 @@ fi
 
 command -v xcodegen >/dev/null || {
   echo "error: xcodegen not found — brew install xcodegen" >&2; exit 1
+}
+command -v create-dmg >/dev/null || {
+  echo "error: create-dmg not found — brew install create-dmg" >&2; exit 1
+}
+
+# Checked now rather than after the build it would otherwise waste.
+if [ -z "$SKIP_NOTARIZE" ] &&
+  ! xcrun notarytool history --keychain-profile "$AC_KEYCHAIN_PROFILE" >/dev/null 2>&1; then
+  echo "error: notarytool profile \"$AC_KEYCHAIN_PROFILE\" is not usable." >&2
+  echo "       See the header of this script, or set SKIP_NOTARIZE=1." >&2
+  exit 1
+fi
+
+# Submits, waits, and fails with Apple's reasons. Without the log a rejection
+# surfaces later as stapler's "Record not found", which explains nothing.
+notarize() {
+  local file="$1" result id status
+  result="$(xcrun notarytool submit "$file" --keychain-profile "$AC_KEYCHAIN_PROFILE" \
+    --wait --output-format json)" || {
+    echo "error: notarytool could not submit $file" >&2
+    return 1
+  }
+  id="$(plutil -extract id raw -o - - <<<"$result")"
+  status="$(plutil -extract status raw -o - - <<<"$result")"
+  echo "   $status ($id)"
+  if [ "$status" != "Accepted" ]; then
+    xcrun notarytool log "$id" --keychain-profile "$AC_KEYCHAIN_PROFILE" >&2 || true
+    return 1
+  fi
 }
 
 echo "==> Generating the Xcode project…"
@@ -80,13 +115,13 @@ codesign --verify --strict --verbose=2 "$APP"
 # directory, which nobody installs, and leaves the shipped app needing Apple
 # online at first launch. The DMG is then signed and notarized in its own
 # right, so `spctl -a -t open` accepts the file people actually download.
-if [ -n "${AC_KEYCHAIN_PROFILE:-}" ]; then
+if [ -z "$SKIP_NOTARIZE" ]; then
   echo "==> Notarizing the app (this can take a few minutes)…"
   ZIP="$BUILD/$APP_NAME.zip"
   rm -f "$ZIP"
   # ditto, not zip: it preserves the bundle's symlinks and extended attributes.
   ditto -c -k --keepParent "$APP" "$ZIP"
-  xcrun notarytool submit "$ZIP" --keychain-profile "$AC_KEYCHAIN_PROFILE" --wait
+  notarize "$ZIP"
   rm -f "$ZIP"
   echo "==> Stapling the app…"
   xcrun stapler staple "$APP"
@@ -95,23 +130,63 @@ fi
 echo "==> Building DMG…"
 rm -rf "$DIST"; mkdir -p "$DIST"
 STAGE="$(mktemp -d)"
-cp -R "$APP" "$STAGE/"
-ln -s /Applications "$STAGE/Applications"
-hdiutil create -volname "$APP_NAME" -srcfolder "$STAGE" -ov -format UDZO "$DMG" >/dev/null
-rm -rf "$STAGE"
+trap 'rm -rf "$STAGE"' EXIT
+# ditto, for the same reason as above.
+ditto "$APP" "$STAGE/$APP_NAME.app"
+# The positions are the picture's: see Tools/make-dmg-background.swift. This asks
+# Finder to arrange the window, so it needs a logged-in session and permission to
+# automate Finder, and macOS will ask for that the first time.
+create-dmg \
+  --volname "$APP_NAME" \
+  --background "$ROOT/Tools/dmg-background.tiff" \
+  --window-pos 200 120 \
+  --window-size 640 400 \
+  --icon-size 128 \
+  --text-size 13 \
+  --icon "$APP_NAME.app" 160 180 \
+  --hide-extension "$APP_NAME.app" \
+  --app-drop-link 480 180 \
+  --no-internet-enable \
+  --hdiutil-quiet \
+  "$DMG" "$STAGE" >/dev/null
 echo "   Wrote $DMG"
 
 echo "==> Signing the DMG…"
 codesign --force --timestamp --sign "$DEVELOPER_ID" "$DMG"
 
-if [ -n "${AC_KEYCHAIN_PROFILE:-}" ]; then
-  echo "==> Notarizing the DMG (this can take a few minutes)…"
-  xcrun notarytool submit "$DMG" --keychain-profile "$AC_KEYCHAIN_PROFILE" --wait
-  echo "==> Stapling the DMG…"
-  xcrun stapler staple "$DMG"
-  echo "==> Notarized & stapled ✓"
-else
-  echo "==> Skipping notarization (set AC_KEYCHAIN_PROFILE to enable)."
+if [ -n "$SKIP_NOTARIZE" ]; then
+  echo "==> Skipping notarization (SKIP_NOTARIZE is set). This DMG will not open elsewhere."
+  echo "==> Done: $DMG"
+  exit 0
 fi
+
+echo "==> Notarizing the DMG (this can take a few minutes)…"
+notarize "$DMG"
+echo "==> Stapling the DMG…"
+xcrun stapler staple "$DMG"
+
+# Checks the file people download, and the app inside it, the way Gatekeeper
+# will. Everything above passing does not prove the staple reached the copy that
+# ships, which is the mistake the ordering comment above is about.
+echo "==> Verifying what ships…"
+xcrun stapler validate "$DMG"
+spctl -a -t open --context context:primary-signature -vv "$DMG"
+MOUNT="$(mktemp -d)"
+hdiutil attach "$DMG" -readonly -nobrowse -quiet -mountpoint "$MOUNT"
+trap 'hdiutil detach "$MOUNT" -quiet || true; rm -rf "$STAGE" "$MOUNT"' EXIT
+# Finder's layout lives in these two files. Missing, the DMG still opens and still
+# installs, as a plain window with no arrow, so nothing else here would notice.
+[ -f "$MOUNT/.DS_Store" ] && [ -f "$MOUNT/.background/dmg-background.tiff" ] || {
+  echo "error: the DMG lost its window layout." >&2
+  exit 1
+}
+xcrun stapler validate "$MOUNT/$APP_NAME.app"
+spctl -a -t exec -vv "$MOUNT/$APP_NAME.app"
+codesign --verify --deep --strict "$MOUNT/$APP_NAME.app"
+if codesign -d --entitlements - "$MOUNT/$APP_NAME.app" 2>/dev/null | grep -q get-task-allow; then
+  echo "error: the shipped app carries get-task-allow, which is a debug build." >&2
+  exit 1
+fi
+echo "==> Notarized, stapled and verified ✓"
 
 echo "==> Done: $DMG"
